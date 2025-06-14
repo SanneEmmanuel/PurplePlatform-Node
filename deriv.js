@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 require('dotenv').config();
 
 const API_TOKEN = process.env.DERIV_API_TOKEN || 'your_api_token_here';
-const SYMBOL = 'R_100';
+const SYMBOL = process.env.SYMBOL ;
 const GRANULARITY = 60;
 const COUNT = 100;
 
