@@ -1,86 +1,108 @@
 // indicators.js
 
-function calculateEMA(data, period = 20) {
-    const k = 2 / (period + 1);
-    const emaArray = [];
+/**
+ * Calculate EMA (Exponential Moving Average)
+ * @param {Array} candles - array of candles with 'close' prices
+ * @param {number} period - number of periods (e.g., 20)
+ * @returns {Array} EMA values for each candle starting from period-1 index
+ */
+function calculateEMA(candles, period) {
+  const k = 2 / (period + 1);
+  const emaArray = [];
 
-    let ema = data.slice(0, period).reduce((acc, val) => acc + val, 0) / period;
-    emaArray[period - 1] = ema;
+  // First EMA is just SMA of first period closes
+  let sum = 0;
+  for (let i = 0; i < period; i++) {
+    sum += candles[i].close;
+  }
+  let ema = sum / period;
+  emaArray[period - 1] = ema;
 
-    for (let i = period; i < data.length; i++) {
-        ema = data[i] * k + ema * (1 - k);
-        emaArray[i] = ema;
-    }
+  // Calculate EMA for rest
+  for (let i = period; i < candles.length; i++) {
+    ema = candles[i].close * k + ema * (1 - k);
+    emaArray[i] = ema;
+  }
 
-    return emaArray;
-}
-
-function calculateRSI(data, period = 7) {
-    const rsiArray = [];
-
-    let gains = 0, losses = 0;
-
-    for (let i = 1; i <= period; i++) {
-        const change = data[i] - data[i - 1];
-        if (change > 0) gains += change;
-        else losses -= change;
-    }
-
-    let avgGain = gains / period;
-    let avgLoss = losses / period;
-    rsiArray[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
-
-    for (let i = period + 1; i < data.length; i++) {
-        const change = data[i] - data[i - 1];
-        const gain = change > 0 ? change : 0;
-        const loss = change < 0 ? -change : 0;
-
-        avgGain = (avgGain * (period - 1) + gain) / period;
-        avgLoss = (avgLoss * (period - 1) + loss) / period;
-
-        const rs = avgLoss === 0 ? 0 : avgGain / avgLoss;
-        rsiArray[i] = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
-    }
-
-    return rsiArray;
+  return emaArray;
 }
 
 /**
- * Bill Williams Fractals (for 1-minute or any timeframe)
- * @param {Array} candles - [{ high, low, ... }]
- * @returns {Array} - [{ up: bool, down: bool }]
+ * Calculate RSI (Relative Strength Index)
+ * @param {Array} candles - array of candles with 'close' prices
+ * @param {number} period - number of periods (e.g., 7)
+ * @returns {Array} RSI values for each candle starting from period index
  */
-function calculateFractals(candles) {
-    const len = candles.length;
-    const result = Array(len).fill(null).map(() => ({ up: false, down: false }));
+function calculateRSI(candles, period) {
+  const rsiArray = [];
+  let gains = 0;
+  let losses = 0;
 
-    for (let i = 2; i < len - 2; i++) {
-        const h = candles.map(c => c.high);
-        const l = candles.map(c => c.low);
+  // Calculate initial average gain and loss
+  for (let i = 1; i <= period; i++) {
+    const change = candles[i].close - candles[i - 1].close;
+    if (change > 0) gains += change;
+    else losses -= change;
+  }
 
-        const isUpFractal =
-            h[i] > h[i - 1] &&
-            h[i] > h[i - 2] &&
-            h[i] > h[i + 1] &&
-            h[i] > h[i + 2];
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  rsiArray[period] = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
 
-        const isDownFractal =
-            l[i] < l[i - 1] &&
-            l[i] < l[i - 2] &&
-            l[i] < l[i + 1] &&
-            l[i] < l[i + 2];
+  // Calculate RSI for rest of candles
+  for (let i = period + 1; i < candles.length; i++) {
+    const change = candles[i].close - candles[i - 1].close;
+    let gain = change > 0 ? change : 0;
+    let loss = change < 0 ? -change : 0;
 
-        result[i] = {
-            up: isUpFractal,
-            down: isDownFractal
-        };
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    rsiArray[i] = 100 - (100 / (1 + rs));
+  }
+
+  return rsiArray;
+}
+
+/**
+ * Calculate Bill Williams Fractals
+ * Fractal High: middle candle's high > highs of two candles before and after
+ * Fractal Low: middle candle's low < lows of two candles before and after
+ * @param {Array} candles - array of candles with 'high' and 'low'
+ * @returns {Object} { fractalHighs: Array, fractalLows: Array } with true/false for each candle
+ */
+function calculateBillWilliamsFractals(candles) {
+  const fractalHighs = new Array(candles.length).fill(false);
+  const fractalLows = new Array(candles.length).fill(false);
+
+  for (let i = 2; i < candles.length - 2; i++) {
+    const high = candles[i].high;
+    if (
+      high > candles[i - 1].high &&
+      high > candles[i - 2].high &&
+      high > candles[i + 1].high &&
+      high > candles[i + 2].high
+    ) {
+      fractalHighs[i] = true;
     }
 
-    return result;
+    const low = candles[i].low;
+    if (
+      low < candles[i - 1].low &&
+      low < candles[i - 2].low &&
+      low < candles[i + 1].low &&
+      low < candles[i + 2].low
+    ) {
+      fractalLows[i] = true;
+    }
+  }
+
+  return { fractalHighs, fractalLows };
 }
 
 module.exports = {
-    calculateEMA,
-    calculateRSI,
-    calculateFractals
+  calculateEMA,
+  calculateRSI,
+  calculateBillWilliamsFractals,
 };
