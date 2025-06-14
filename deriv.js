@@ -1,82 +1,61 @@
 const WebSocket = require('ws');
-const DerivAPI = require('@deriv/deriv-api');
+require('dotenv').config(); // Optional: for loading API token from .env
 
-// Replace with your actual app_id
-const app_id = '1089'; // Use your own app_id from Deriv
+const API_TOKEN = process.env.DERIV_API_TOKEN || 'your_api_token_here';
 
-// Create a new WebSocket connection
-const connection = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=${app_id}`);
-const api = new DerivAPI({ connection });
+// WebSocket connection to Deriv
+const ws = new WebSocket('wss://ws.derivws.com/websockets/v3');
 
-async function initialize() {
+// Handle connection open
+ws.on('open', () => {
+    console.log('[✓] WebSocket connected. Sending authorization...');
+    ws.send(JSON.stringify({ authorize: API_TOKEN }));
+});
+
+// Handle incoming messages
+ws.on('message', (data) => {
     try {
-        // Wait for the connection to open
-        await api.connect();
+        const response = JSON.parse(data);
+        console.log('[📥] Message received:', response);
 
-        // Example: Ping the server to check connectivity
-        const pingResponse = await api.basic.ping();
-        console.log('Ping response:', pingResponse);
+        switch (response.msg_type) {
+            case 'authorize':
+                console.log('[🔐] Authorized as', response.authorize.loginid);
+                // Request account balance as example
+                requestBalance();
+                break;
 
-        // Example: Get the website status
-        const status = await api.websiteStatus();
-        console.log('Website status:', status);
+            case 'balance':
+                console.log('[💰] Balance:', response.balance);
+                break;
 
-        // Example: Get active symbols
-        const activeSymbols = await api.activeSymbols({ product_type: 'basic' });
-        console.log('Active symbols:', activeSymbols);
+            case 'error':
+                console.error('[❌] API Error:', response.error);
+                break;
 
-        // Example: Subscribe to tick data for a symbol
-        const tick = await api.ticks.subscribe({ symbol: 'frxEURUSD' });
-        console.log('Tick data:', tick);
+            default:
+                console.log('[ℹ️] Other message:', response.msg_type);
+        }
 
-        // Example: Create a new contract
-        const contract = await api.contracts.proposal({
-            symbol: 'frxEURUSD',
-            amount: 1,
-            basis: 'stake',
-            contract_type: 'CALL',
-            currency: 'USD',
-            duration: 5,
-            duration_unit: 'm',
-            symbol_type: 'forex',
-        });
-        console.log('Contract proposal:', contract);
-
-        // Example: Authorize with an API token
-        const authorization = await api.authorize({ api_token: 'your_api_token' });
-        console.log('Authorization:', authorization);
-
-        // Example: Get account balance
-        const balance = await api.balance();
-        console.log('Account balance:', balance);
-
-        // Example: Get profit table
-        const profitTable = await api.profitTable({
-            contract_type: ['CALL'],
-            profit_table: 1,
-        });
-        console.log('Profit table:', profitTable);
-
-        // Example: Create a P2P advert
-        const p2pAdvert = await api.p2pAdvertCreate({
-            amount: 100,
-            contact_info: 'contact@example.com',
-            description: 'Selling EUR',
-            local_currency: 'USD',
-            max_order_amount: 500,
-            min_order_amount: 10,
-            p2p_advert_create: 1,
-            payment_info: 'Bank transfer',
-            rate: 1.1,
-            rate_type: 'fixed',
-            type: 'sell',
-        });
-        console.log('P2P advert created:', p2pAdvert);
-
-    } catch (error) {
-        console.error('Error initializing API:', error);
+    } catch (err) {
+        console.error('[⚠️] JSON parse error:', err);
     }
-}
+});
 
-// Initialize the API
-initialize();
+// Handle errors
+ws.on('error', (err) => {
+    console.error('[❗] WebSocket error:', err);
+});
+
+// Handle connection close
+ws.on('close', () => {
+    console.log('[🔌] WebSocket connection closed.');
+});
+
+// Send a balance request
+function requestBalance() {
+    ws.send(JSON.stringify({
+        balance: 1,
+        subscribe: 1 // Set to 0 if you want a one-time snapshot
+    }));
+}
