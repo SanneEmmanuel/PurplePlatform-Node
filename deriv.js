@@ -2,242 +2,174 @@ const WebSocket = require('ws');
 require('dotenv').config();
 
 const API_TOKEN = process.env.DERIV_API_TOKEN || 'your_api_token_here';
-
-// Config
 const SYMBOL = 'R_100';
-const GRANULARITY = 60; // 1 minute
+const GRANULARITY = 60;
 const COUNT = 100;
 
+const candles = [];
+const openContracts = new Map();
+const closedContracts = new Map();
+
 let ws = null;
-let reconnectAttempts = 0;
-const MAX_RECONNECT_DELAY = 10000; // 10 seconds max delay
+let reconnecting = false;
 
-// Data stores
-let candles = [];
-const openContracts = new Map();    // Active trades
-const closedContracts = new Map();  // Past trades
+function connect() {
+  ws = new WebSocket('wss://ws.derivws.com/websockets/v3');
 
-// Connect WebSocket
-function connectWebSocket() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        console.log('[ℹ️] WebSocket already connected.');
-        return;
+  ws.on('open', () => {
+    console.log('[✅] WebSocket connected');
+    send({ authorize: API_TOKEN });
+  });
+
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data);
+      handleMessage(msg);
+    } catch (e) {
+      console.error('[❌] JSON Parse Error:', e.message);
     }
+  });
 
-    ws = new WebSocket('wss://ws.derivws.com/websockets/v3');
+  ws.on('error', (err) => {
+    console.error('[⚠️] WebSocket Error:', err.message);
+  });
 
-    ws.on('open', () => {
-        reconnectAttempts = 0;
-        console.log('[✓] WebSocket connected. Sending authorization...');
-        ws.send(JSON.stringify({ authorize: API_TOKEN }));
-    });
-
-    ws.on('message', (data) => {
-        try {
-            const response = JSON.parse(data);
-            handleMessage(response);
-        } catch (err) {
-            console.error('[⚠️] JSON parse error:', err);
-        }
-    });
-
-    ws.on('error', (err) => {
-        console.error('[❗] WebSocket error:', err.message);
-    });
-
-    ws.on('close', () => {
-        console.log('[🔌] WebSocket connection closed.');
-        attemptReconnect();
-    });
-}
-
-function attemptReconnect() {
-    reconnectAttempts++;
-    const delay = Math.min(MAX_RECONNECT_DELAY, 1000 * 2 ** reconnectAttempts);
-    console.log(`[🔄] Attempting to reconnect in ${delay / 1000} seconds...`);
-
-    setTimeout(() => {
-        console.log('[🔁] Reconnecting now...');
-        connectWebSocket();
-    }, delay);
-}
-
-function handleMessage(response) {
-    switch (response.msg_type) {
-        case 'authorize':
-            console.log('[🔐] Authorized as', response.authorize.loginid);
-            requestCandles();
-            requestTradeHistory();
-            break;
-
-        case 'candles':
-            handleCandles(response);
-            break;
-
-        case 'proposal':
-            handleProposal(response);
-            break;
-
-        case 'buy':
-            handleBuy(response);
-            break;
-
-        case 'proposal_open_contract':
-            handleOpenContract(response);
-            break;
-
-        case 'sell':
-            handleSell(response);
-            break;
-
-        case 'error':
-            console.error('[❌] API Error:', response.error.message);
-            break;
-
-        default:
-            console.log('[ℹ️] Unhandled message type:', response.msg_type);
+  ws.on('close', () => {
+    console.log('[🔌] WebSocket closed. Reconnecting...');
+    if (!reconnecting) {
+      reconnecting = true;
+      setTimeout(connect, 3000);
     }
+  });
 }
 
-function handleCandles(response) {
-    if (response.candles && response.candles.length > 0) {
-        candles = response.candles;
-        const latest = candles[candles.length - 1];
-        console.log(`[📊] Received ${candles.length} candles for ${SYMBOL} (${GRANULARITY}s interval)`);
-        // Optionally log or process candles here
-    } else {
-        console.log('[⚠️] No candle data received.');
-    }
+function send(data) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
 }
 
-function handleProposal(response) {
-    console.log('[💡] Trade proposal received:', response.proposal);
+function handleMessage(msg) {
+  switch (msg.msg_type) {
+    case 'authorize':
+      console.log('[🔐] Authorized as:', msg.authorize.loginid);
+      subscribeToCandles();
+      break;
+
+    case 'candles':
+    case 'ohlc':
+      updateCandles(msg);
+      break;
+
+    case 'proposal':
+      if (exports.handleProposal) exports.handleProposal(msg);
+      break;
+
+    case 'buy':
+      handleBuy(msg);
+      break;
+
+    case 'proposal_open_contract':
+      handleOpenContract(msg);
+      break;
+
+    case 'error':
+      console.error('[❌] API Error:', msg.error.message);
+      break;
+
+    default:
+      // console.log('[ℹ️] Unhandled msg_type:', msg.msg_type);
+      break;
+  }
 }
 
-function handleBuy(response) {
-    console.log('[🎉] Trade purchased:', response.buy);
-    subscribeOpenContract(response.buy.contract_id);
+function subscribeToCandles() {
+  send({
+    candles: SYMBOL,
+    granularity: GRANULARITY,
+    subscribe: 1,
+  });
 }
 
-function handleOpenContract(response) {
-    if (response.proposal_open_contract) {
-        const contract = response.proposal_open_contract;
-
-        if (contract.is_expired) {
-            openContracts.delete(contract.contract_id);
-            closedContracts.set(contract.contract_id, contract);
-            console.log('[📉] Contract expired, moved to closedContracts:', contract.contract_id);
-        } else {
-            openContracts.set(contract.contract_id, contract);
-            console.log('[📈] Open contract update:', contract.contract_id);
-        }
-    }
+function updateCandles(msg) {
+  if (msg.ohlc) {
+    const updated = msg.ohlc;
+    candles.push(updated);
+    if (candles.length > COUNT) candles.shift();
+  } else if (msg.candles) {
+    candles.splice(0, candles.length, ...msg.candles);
+  }
 }
-
-function handleSell(response) {
-    console.log('[🛒] Sell response:', response.sell);
-}
-
-// Requests
-
-function requestCandles() {
-    const request = {
-        candles: SYMBOL,
-        granularity: GRANULARITY,
-        count: COUNT,
-        subscribe: 0, // 1 for live updates
-    };
-    console.log(`[📨] Requesting ${COUNT} historical candles for ${SYMBOL} (${GRANULARITY}s interval)...`);
-    ws.send(JSON.stringify(request));
-}
-
-function requestTradeHistory() {
-    const historyRequest = {
-        proposal_open_contract: 1,
-        subscribe: 0,
-    };
-    console.log('[📨] Requesting trade history (closed contracts)...');
-    ws.send(JSON.stringify(historyRequest));
-}
-
-// Trading functions
 
 function requestTradeProposal(contractType, amount, duration, durationUnit = 'm') {
-    const proposalRequest = {
-        proposal: 1,
-        subscribe: 1,
-        amount: amount,
-        basis: 'stake',
-        contract_type: contractType,
-        currency: 'USD',
-        duration: duration,
-        duration_unit: durationUnit,
-        symbol: SYMBOL,
-    };
-
-    console.log(`[📨] Requesting trade proposal: ${contractType} ${amount} USD for ${duration}${durationUnit} on ${SYMBOL}`);
-    ws.send(JSON.stringify(proposalRequest));
+  const proposal = {
+    proposal: 1,
+    subscribe: 1,
+    amount,
+    basis: 'stake',
+    contract_type: contractType,
+    currency: 'USD',
+    duration,
+    duration_unit: durationUnit,
+    symbol: SYMBOL,
+  };
+  send(proposal);
 }
 
 function buyContract(proposalId, price) {
-    const buyRequest = {
-        buy: proposalId,
-        price: price,
-        subscribe: 1,
-    };
-
-    console.log(`[📨] Sending buy request for proposal ${proposalId} at price ${price}`);
-    ws.send(JSON.stringify(buyRequest));
+  const buy = {
+    buy: proposalId,
+    price,
+    subscribe: 1,
+  };
+  send(buy);
 }
 
-function subscribeOpenContract(contractId) {
-    const subscribeRequest = {
-        proposal_open_contract: contractId,
-        subscribe: 1,
-    };
-    console.log(`[📨] Subscribing to open contract updates for contract_id: ${contractId}`);
-    ws.send(JSON.stringify(subscribeRequest));
+function handleBuy(msg) {
+  console.log('[🛒] Bought contract:', msg.buy.contract_id);
+  subscribeToOpenContract(msg.buy.contract_id);
 }
 
-function sellContract(contractId, price) {
-    if (!contractId) {
-        console.error('[❗] sellContract: contractId is required');
-        return;
-    }
-    const sellRequest = {
-        sell: contractId,
-        price: price,
-    };
-    console.log(`[📨] Sending sell request for contract ${contractId} at price ${price}`);
-    ws.send(JSON.stringify(sellRequest));
+function subscribeToOpenContract(contractId) {
+  send({
+    proposal_open_contract: 1,
+    contract_id: contractId,
+    subscribe: 1,
+  });
 }
 
-function disconnectWebSocket() {
-    if (ws) {
-        console.log('[🛑] Disconnecting WebSocket...');
-        ws.close();
-        ws = null;
-    }
+function handleOpenContract(msg) {
+  const contract = msg.proposal_open_contract;
+  if (!contract) return;
+
+  const { contract_id, is_sold } = contract;
+
+  if (is_sold) {
+    openContracts.delete(contract_id);
+    closedContracts.set(contract_id, contract);
+    console.log('[📕] Contract closed:', contract_id);
+  } else {
+    openContracts.set(contract_id, contract);
+    console.log('[📗] Contract updated:', contract_id);
+  }
 }
 
-// Handle graceful shutdown
+// === Init WebSocket ===
+connect();
+
+// Graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\n[🛑] Shutting down...');
-    disconnectWebSocket();
-    process.exit();
+  console.log('\n[🛑] Shutting down...');
+  if (ws) ws.close();
+  process.exit();
 });
 
+// === Exports ===
 module.exports = {
-    connectWebSocket,
-    disconnectWebSocket,
-    candles,
-    openContracts,
-    closedContracts,
-    requestTradeProposal,
-    buyContract,
-    subscribeOpenContract,
-    sellContract,
+  candles,
+  openContracts,
+  closedContracts,
+  requestTradeProposal,
+  buyContract,
+  handleProposal: null, // to be overridden in main.js
 };
-
-// Optionally start connection automatically
-connectWebSocket();
