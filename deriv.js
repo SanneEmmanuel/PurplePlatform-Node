@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 require('dotenv').config();
 
 const API_TOKEN = process.env.DERIV_API_TOKEN || 'your_api_token_here';
-const SYMBOL = process.env.SYMBOL ;
+const SYMBOL = process.env.SYMBOL;
 const GRANULARITY = 60;
 const COUNT = 100;
 
@@ -12,6 +12,8 @@ const closedContracts = new Map();
 
 let ws = null;
 let reconnecting = false;
+let availableSymbols = [];
+let onInvalidSymbol = null;
 
 function connect() {
   ws = new WebSocket('wss://ws.derivws.com/websockets/v3');
@@ -53,7 +55,11 @@ function handleMessage(msg) {
   switch (msg.msg_type) {
     case 'authorize':
       console.log('[🔐] Authorized as:', msg.authorize.loginid);
-      subscribeToCandles();
+      requestActiveSymbols(); // Request available symbols on auth
+      break;
+
+    case 'active_symbols':
+      handleActiveSymbols(msg);
       break;
 
     case 'candles':
@@ -81,6 +87,29 @@ function handleMessage(msg) {
       // console.log('[ℹ️] Unhandled msg_type:', msg.msg_type);
       break;
   }
+}
+
+function requestActiveSymbols() {
+  send({
+    active_symbols: 'brief',
+    product_type: 'basic',
+  });
+}
+
+function handleActiveSymbols(msg) {
+  availableSymbols = msg.active_symbols.map((s) => s.symbol);
+
+  if (!availableSymbols.includes(SYMBOL)) {
+    console.error(`[❌] SYMBOL '${SYMBOL}' is invalid.`);
+    if (typeof onInvalidSymbol === 'function') {
+      onInvalidSymbol(availableSymbols);
+    }
+    ws.close(); // Prevent continuing with an invalid symbol
+    return;
+  }
+
+  console.log(`[✅] SYMBOL '${SYMBOL}' is valid.`);
+  subscribeToCandles();
 }
 
 function subscribeToCandles() {
@@ -172,4 +201,6 @@ module.exports = {
   requestTradeProposal,
   buyContract,
   handleProposal: null, // to be overridden in main.js
+  setOnInvalidSymbol: (cb) => { onInvalidSymbol = cb; },
+  getAvailableSymbols: () => availableSymbols,
 };
