@@ -9,10 +9,18 @@ const fs = require('fs').promises;
 const dotenv = require('dotenv');
 const deriv = require('./deriv');
 const indicators = require('./indicators');
+const express = require('express');
+const cors = require('cors');
+const app = express();
 
+// Enable All CORS Requests
+app.use(cors());  // This single line allows all origins
+
+// ... rest of your existing code (routes, etc.) ...
+
+app.listen(3000, () => console.log('Server running'));
 dotenv.config();
 
-const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, 'public')));
