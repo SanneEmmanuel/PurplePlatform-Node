@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PurpleBot API Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #7c4dff;
+            --primary-dark: #3f1dcb;
+            --primary-light: #b47cff;
+            --secondary: #ff4081;
+            --white: #ffffff;
+            --gray: #f5f5f5;
+            --dark-gray: #757575;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .login-container {
+            background: var(--white);
+            width: 90%;
+            max-width: 400px;
+            border-radius: 10px;
+            box-shadow: 0 14px 28px rgba(0,0,0,0.25), 0 10px 10px rgba(0,0,0,0.22);
+            padding: 40px;
+            position: relative;
+            overflow: hidden;
+            animation: fadeIn 0.6s ease-out;
+            transform-style: preserve-3d;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .login-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            animation: rainbow 8s linear infinite;
+        }
+
+        @keyframes rainbow {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 100% 50%; }
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+            color: var(--primary);
+        }
+
+        .logo i {
+            font-size: 50px;
+            margin-bottom: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .input-group {
+            position: relative;
+            margin-bottom: 25px;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 15px 10px 15px 50px;
+            border: none;
+            border-bottom: 2px solid var(--gray);
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s;
+            background-color: transparent;
+        }
+
+        .input-group input:focus {
+            border-bottom-color: var(--primary);
+        }
+
+        .input-group label {
+            position: absolute;
+            left: 50px;
+            top: 15px;
+            color: var(--dark-gray);
+            transition: all 0.3s;
+            pointer-events: none;
+        }
+
+        .input-group input:focus + label,
+        .input-group input:valid + label {
+            transform: translateY(-25px) translateX(-40px) scale(0.8);
+            color: var(--primary);
+        }
+
+        .input-group i {
+            position: absolute;
+            left: 10px;
+            top: 15px;
+            color: var(--dark-gray);
+            font-size: 24px;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.16);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        button:hover {
+            background: var(--primary-dark);
+            box-shadow: 0 5px 10px rgba(0,0,0,0.2);
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 5px;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.5);
+            opacity: 0;
+            border-radius: 100%;
+            transform: scale(1, 1) translate(-50%, -50%);
+            transform-origin: 50% 50%;
+        }
+
+        button:focus:not(:active)::after {
+            animation: ripple 1s ease-out;
+        }
+
+        @keyframes ripple {
+            0% {
+                transform: scale(0, 0);
+                opacity: 0.5;
+            }
+            100% {
+                transform: scale(20, 20);
+                opacity: 0;
+            }
+        }
+
+        .floating-balls {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .ball {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            animation: float 15s infinite linear;
+        }
+
+        @keyframes float {
+            0% {
+                transform: translateY(0) rotate(0deg);
+            }
+            100% {
+                transform: translateY(-1000px) rotate(720deg);
+            }
+        }
+
+        .error-message {
+            color: var(--secondary);
+            text-align: center;
+            margin-top: 15px;
+            height: 20px;
+            font-size: 14px;
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+
+        .success-message {
+            color: var(--primary);
+            text-align: center;
+            margin-top: 15px;
+            height: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="floating-balls" id="balls"></div>
+    
+    <div class="login-container">
+        <div class="logo">
+            <i class="material-icons">api</i>
+            <h1>PurpleBot</h1>
+        </div>
+        
+        <form id="apiForm">
+            <div class="input-group">
+                <i class="material-icons">vpn_key</i>
+                <input type="password" id="apiKey" required>
+                <label for="apiKey">API Token</label>
+            </div>
+            
+            <button type="submit">
+                <span>Connect</span>
+            </button>
+            
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+        </form>
+    </div>
+
+    <script>
+        // Create floating balls
+        const ballsContainer = document.getElementById('balls');
+        for (let i = 0; i < 15; i++) {
+            const ball = document.createElement('div');
+            ball.classList.add('ball');
+            ball.style.width = `${Math.random() * 60 + 20}px`;
+            ball.style.height = ball.style.width;
+            ball.style.left = `${Math.random() * 100}%`;
+            ball.style.top = `${Math.random() * 100 + 100}%`;
+            ball.style.animationDuration = `${Math.random() * 20 + 10}s`;
+            ball.style.animationDelay = `${Math.random() * 5}s`;
+            ballsContainer.appendChild(ball);
+        }
+
+        // Form submission
+        document.getElementById('apiForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const apiKey = document.getElementById('apiKey').value;
+            const errorElement = document.getElementById('errorMessage');
+            const successElement = document.getElementById('successMessage');
+            
+            errorElement.textContent = '';
+            successElement.textContent = '';
+            
+            if (!apiKey) {
+                errorElement.textContent = 'Please enter your API token';
+                return;
+            }
+
+            try {
+                // Button loading state
+                const button = e.target.querySelector('button');
+                button.disabled = true;
+                button.innerHTML = '<span>Validating...</span>';
+                
+                const response = await fetch('/set-api-token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ token: apiKey })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    successElement.textContent = data.message || 'API token validated successfully!';
+                    // Add beautiful transition
+                    document.querySelector('.login-container').style.animation = 'fadeIn 0.6s ease-out';
+                    // Redirect or do something on success
+                    setTimeout(() => {
+                        window.location.href = '/dashboard.html'; // Change to your dashboard page
+                    }, 1500);
+                } else {
+                    errorElement.textContent = data.error || 'Invalid API token';
+                    button.innerHTML = '<span>Connect</span>';
+                    button.disabled = false;
+                }
+            } catch (err) {
+                errorElement.textContent = 'Connection error. Please try again.';
+                console.error('API validation error:', err);
+                const button = e.target.querySelector('button');
+                button.innerHTML = '<span>Connect</span>';
+                button.disabled = false;
+            }
+        });
+
+        // Add floating label effect for browsers that don't support :valid
+        document.getElementById('apiKey').addEventListener('change', function() {
+            if (this.value) {
+                this.classList.add('has-value');
+            } else {
+                this.classList.remove('has-value');
+            }
+        });
+    </script>
+</body>
+</html>
