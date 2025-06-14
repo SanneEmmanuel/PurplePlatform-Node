@@ -8,14 +8,22 @@ const SYMBOL = 'R_100';
 const GRANULARITY = 60; // 1 minute
 const COUNT = 100;
 
-let ws;
+let ws = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_DELAY = 10000; // 10 seconds max delay
 
-// Store open contracts by contract_id
-const openContracts = new Map();
+// Data stores
+let candles = [];
+const openContracts = new Map();    // Active trades
+const closedContracts = new Map();  // Past trades
 
+// Connect WebSocket
 function connectWebSocket() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        console.log('[ℹ️] WebSocket already connected.');
+        return;
+    }
+
     ws = new WebSocket('wss://ws.derivws.com/websockets/v3');
 
     ws.on('open', () => {
@@ -78,6 +86,10 @@ function handleMessage(response) {
             handleOpenContract(response);
             break;
 
+        case 'sell':
+            handleSell(response);
+            break;
+
         case 'error':
             console.error('[❌] API Error:', response.error.message);
             break;
@@ -89,63 +101,75 @@ function handleMessage(response) {
 
 function handleCandles(response) {
     if (response.candles && response.candles.length > 0) {
-        const latest = response.candles[response.candles.length - 1];
-        console.log(`[📊] Received ${response.candles.length} candles for ${SYMBOL} (${GRANULARITY}s interval)`);
-        console.table(response.candles.map(c => ({
-            time: new Date(c.epoch * 1000).toISOString(),
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume
-        })));
-        console.log(`[💵] Latest price (close): ${latest.close}`);
+        candles = response.candles;
+        const latest = candles[candles.length - 1];
+        console.log(`[📊] Received ${candles.length} candles for ${SYMBOL} (${GRANULARITY}s interval)`);
+        // Optionally log or process candles here
     } else {
         console.log('[⚠️] No candle data received.');
     }
 }
 
 function handleProposal(response) {
-    // Trade proposal received — you can handle or pass this to your UI or logic
     console.log('[💡] Trade proposal received:', response.proposal);
 }
 
 function handleBuy(response) {
-    // Buy confirmation received
     console.log('[🎉] Trade purchased:', response.buy);
-    // You may want to subscribe to contract updates here by calling subscribeOpenContract(response.buy.contract_id)
+    subscribeOpenContract(response.buy.contract_id);
 }
 
 function handleOpenContract(response) {
     if (response.proposal_open_contract) {
         const contract = response.proposal_open_contract;
-        openContracts.set(contract.contract_id, contract);
-        console.log('[📈] Open contract update:', contract);
+
+        if (contract.is_expired) {
+            openContracts.delete(contract.contract_id);
+            closedContracts.set(contract.contract_id, contract);
+            console.log('[📉] Contract expired, moved to closedContracts:', contract.contract_id);
+        } else {
+            openContracts.set(contract.contract_id, contract);
+            console.log('[📈] Open contract update:', contract.contract_id);
+        }
     }
 }
+
+function handleSell(response) {
+    console.log('[🛒] Sell response:', response.sell);
+}
+
+// Requests
 
 function requestCandles() {
     const request = {
         candles: SYMBOL,
         granularity: GRANULARITY,
         count: COUNT,
-        subscribe: 0 // change to 1 if you want live updates
+        subscribe: 0, // 1 for live updates
     };
     console.log(`[📨] Requesting ${COUNT} historical candles for ${SYMBOL} (${GRANULARITY}s interval)...`);
     ws.send(JSON.stringify(request));
 }
 
-// === Trade functions ===
+function requestTradeHistory() {
+    const historyRequest = {
+        proposal_open_contract: 1,
+        subscribe: 0,
+    };
+    console.log('[📨] Requesting trade history (closed contracts)...');
+    ws.send(JSON.stringify(historyRequest));
+}
 
-// Request a trade proposal (price quote)
+// Trading functions
+
 function requestTradeProposal(contractType, amount, duration, durationUnit = 'm') {
     const proposalRequest = {
         proposal: 1,
-        subscribe: 1, // subscribe for proposal updates
+        subscribe: 1,
         amount: amount,
-        basis: 'stake',  // or 'payout' depending on your preference
-        contract_type: contractType, // e.g. CALL, PUT
-        currency: 'USD', // your account currency
+        basis: 'stake',
+        contract_type: contractType,
+        currency: 'USD',
         duration: duration,
         duration_unit: durationUnit,
         symbol: SYMBOL,
@@ -155,19 +179,17 @@ function requestTradeProposal(contractType, amount, duration, durationUnit = 'm'
     ws.send(JSON.stringify(proposalRequest));
 }
 
-// Buy contract based on proposal id and price
 function buyContract(proposalId, price) {
     const buyRequest = {
         buy: proposalId,
         price: price,
-        subscribe: 1, // subscribe to contract updates
+        subscribe: 1,
     };
 
     console.log(`[📨] Sending buy request for proposal ${proposalId} at price ${price}`);
     ws.send(JSON.stringify(buyRequest));
 }
 
-// Subscribe to open contract updates by contract_id
 function subscribeOpenContract(contractId) {
     const subscribeRequest = {
         proposal_open_contract: contractId,
@@ -177,39 +199,45 @@ function subscribeOpenContract(contractId) {
     ws.send(JSON.stringify(subscribeRequest));
 }
 
-// Request trade history (closed contracts)
-function requestTradeHistory() {
-    const historyRequest = {
-        proposal_open_contract: 1,
-        subscribe: 0, // no live updates needed here
+function sellContract(contractId, price) {
+    if (!contractId) {
+        console.error('[❗] sellContract: contractId is required');
+        return;
+    }
+    const sellRequest = {
+        sell: contractId,
+        price: price,
     };
-    console.log('[📨] Requesting trade history (closed contracts)...');
-    ws.send(JSON.stringify(historyRequest));
+    console.log(`[📨] Sending sell request for contract ${contractId} at price ${price}`);
+    ws.send(JSON.stringify(sellRequest));
 }
 
-// Start connection
-connectWebSocket();
+function disconnectWebSocket() {
+    if (ws) {
+        console.log('[🛑] Disconnecting WebSocket...');
+        ws.close();
+        ws = null;
+    }
+}
 
-// Graceful shutdown on Ctrl+C
+// Handle graceful shutdown
 process.on('SIGINT', () => {
     console.log('\n[🛑] Shutting down...');
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
-    }
+    disconnectWebSocket();
     process.exit();
 });
 
-// ===
-// Now, to trade:
-// - call requestTradeProposal(...) to get a proposal
-// - then call buyContract(proposalId, price) with values from proposal
-// - to track contract updates, call subscribeOpenContract(contractId)
-// ===
-// Example (add to deriv.js)
 module.exports = {
-  candles,
-  openContracts,
-  closedContracts,
-  // other exports if needed
+    connectWebSocket,
+    disconnectWebSocket,
+    candles,
+    openContracts,
+    closedContracts,
+    requestTradeProposal,
+    buyContract,
+    subscribeOpenContract,
+    sellContract,
 };
 
+// Optionally start connection automatically
+connectWebSocket();
