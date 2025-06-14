@@ -205,3 +205,11 @@ process.on('SIGINT', () => {
 // - then call buyContract(proposalId, price) with values from proposal
 // - to track contract updates, call subscribeOpenContract(contractId)
 // ===
+// Example (add to deriv.js)
+module.exports = {
+  candles,
+  openContracts,
+  closedContracts,
+  // other exports if needed
+};
+
