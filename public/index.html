@@ -338,5 +338,66 @@
             }
         });
     </script>
+    <script>
+// Auto-redirect if already logged in
+document.addEventListener('DOMContentLoaded', async () => {
+    const savedToken = localStorage.getItem('purplebot_api_token');
+    if (!savedToken) return;
+    
+    try {
+        // Show loading state
+        document.querySelector('button[type="submit"]').innerHTML = 
+            '<span>Restoring session...</span>';
+        
+        // Validate token
+        const response = await fetch('/set-api-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: savedToken })
+        });
+        
+        if (response.ok) {
+            window.location.href = '/dashboard.html';
+        } else {
+            localStorage.removeItem('purplebot_api_token');
+        }
+    } catch (error) {
+        console.error('Session restore failed:', error);
+    }
+});
+
+// Update form submission to store token
+document.getElementById('apiForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const apiKey = document.getElementById('apiKey').value;
+    const btn = e.target.querySelector('button');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span>Connecting...</span>';
+    
+    try {
+        const response = await fetch('/set-api-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: apiKey })
+        });
+        
+        if (response.ok) {
+            localStorage.setItem('purplebot_api_token', apiKey);
+            window.location.href = '/dashboard.html';
+        } else {
+            const error = await response.json();
+            document.getElementById('errorMessage').textContent = 
+                error.error || 'Invalid API token';
+        }
+    } catch (error) {
+        document.getElementById('errorMessage').textContent = 
+            'Connection failed. Try again.';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Connect</span>';
+    }
+});
+</script>
 </body>
 </html>
