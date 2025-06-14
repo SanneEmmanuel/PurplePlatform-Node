@@ -5,19 +5,24 @@
 
 const express = require('express');
 const path = require('path');
-const deriv = require('./deriv');         // exports candles, openContracts, closedContracts, requestTradeProposal, buyContract
-const indicators = require('./indicators'); // exports calculateEMA, calculateRSI, calculateBillWilliamsFractals
+const fs = require('fs');
+const dotenv = require('dotenv');
+const deriv = require('./deriv');         // your deriv.js file
+const indicators = require('./indicators');
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
 let tradingInterval = null;
 let lastProposal = null;
 const TRADE_INTERVAL_MS = 10 * 1000;
 
-// === Chart Data Endpoint ===
+// === Chart Data ===
 app.get('/api/chart-data', (req, res) => {
   try {
     const candles = deriv.candles || [];
@@ -45,7 +50,7 @@ app.get('/api/chart-data', (req, res) => {
   }
 });
 
-// === Trading Condition Checkers ===
+// === Condition Checkers ===
 function checkBuyConditions() {
   const candles = deriv.candles;
   if (!candles || candles.length < 3) return false;
@@ -86,40 +91,39 @@ function checkSellConditions() {
   );
 }
 
-// === Patch Deriv Proposal Handler ===
+// === Hook Proposal Handler ===
 const originalProposalHandler = deriv.handleProposal || (() => {});
 deriv.handleProposal = (response) => {
   if (response.proposal) {
     lastProposal = response.proposal;
-    console.log('[💡] New proposal received:', lastProposal.contract_type, '@', lastProposal.ask_price);
+    console.log('[💡] New proposal:', lastProposal.contract_type, '@', lastProposal.ask_price);
   }
   originalProposalHandler(response);
 };
 
-// === Start Trading ===
-app.post('/trade-start', async (req, res) => {
-  if (tradingInterval) return res.status(400).json({ error: 'Trading already active' });
+// === Trading Start ===
+app.post('/trade-start', (req, res) => {
+  if (tradingInterval) return res.status(400).json({ error: 'Trading already running' });
 
-  console.log('[🚀] Starting automated trading...');
-
-  tradingInterval = setInterval(async () => {
+  console.log('[🚀] Starting trading loop...');
+  tradingInterval = setInterval(() => {
     try {
       if (checkBuyConditions()) {
         if (lastProposal?.contract_type === 'CALL') {
-          console.log('[🟢] Executing CALL trade...');
+          console.log('[🟢] Executing CALL...');
           deriv.buyContract(lastProposal.id, lastProposal.ask_price);
           lastProposal = null;
         } else {
-          console.log('[📨] Requesting CALL proposal...');
+          console.log('[📨] Requesting CALL...');
           deriv.requestTradeProposal('CALL', 10, 5);
         }
       } else if (checkSellConditions()) {
         if (lastProposal?.contract_type === 'PUT') {
-          console.log('[🔴] Executing PUT trade...');
+          console.log('[🔴] Executing PUT...');
           deriv.buyContract(lastProposal.id, lastProposal.ask_price);
           lastProposal = null;
         } else {
-          console.log('[📨] Requesting PUT proposal...');
+          console.log('[📨] Requesting PUT...');
           deriv.requestTradeProposal('PUT', 10, 5);
         }
       } else {
@@ -133,7 +137,7 @@ app.post('/trade-start', async (req, res) => {
   res.json({ message: 'Trading started' });
 });
 
-// === Stop Trading ===
+// === Trading End ===
 app.post('/trade-end', (req, res) => {
   if (!tradingInterval) return res.status(400).json({ error: 'Trading not active' });
 
@@ -143,6 +147,23 @@ app.post('/trade-end', (req, res) => {
 
   console.log('[🛑] Trading stopped.');
   res.json({ message: 'Trading stopped' });
+});
+
+// === Set API Token ===
+app.post('/set-api-token', (req, res) => {
+  const { token } = req.body;
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json({ error: 'Invalid token' });
+  }
+
+  try {
+    fs.writeFileSync('.env', `DERIV_API_TOKEN=${token}\nPORT=${PORT}`);
+    console.log('[🔑] DERIV_API_TOKEN updated. Please restart the server.');
+    res.json({ message: 'API token saved. Restart server to apply.' });
+  } catch (error) {
+    console.error('[❌] Failed to write .env:', error.message);
+    res.status(500).json({ error: 'Failed to update token' });
+  }
 });
 
 // === Start Server ===
