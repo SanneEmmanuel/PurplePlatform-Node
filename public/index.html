@@ -156,248 +156,87 @@
             transform: translateY(0);
         }
 
-        button::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 5px;
-            height: 5px;
-            background: rgba(255, 255, 255, 0.5);
-            opacity: 0;
-            border-radius: 100%;
-            transform: scale(1, 1) translate(-50%, -50%);
-            transform-origin: 50% 50%;
-        }
-
-        button:focus:not(:active)::after {
-            animation: ripple 1s ease-out;
-        }
-
-        @keyframes ripple {
-            0% {
-                transform: scale(0, 0);
-                opacity: 0.5;
-            }
-            100% {
-                transform: scale(20, 20);
-                opacity: 0;
-            }
-        }
-
-        .floating-balls {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: -1;
-            overflow: hidden;
-        }
-
-        .ball {
-            position: absolute;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 50%;
-            animation: float 15s infinite linear;
-        }
-
-        @keyframes float {
-            0% {
-                transform: translateY(0) rotate(0deg);
-            }
-            100% {
-                transform: translateY(-1000px) rotate(720deg);
-            }
-        }
-
         .error-message {
             color: var(--secondary);
             text-align: center;
             margin-top: 15px;
-            height: 20px;
             font-size: 14px;
-            animation: shake 0.5s;
-        }
-
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            20%, 60% { transform: translateX(-5px); }
-            40%, 80% { transform: translateX(5px); }
         }
 
         .success-message {
             color: var(--primary);
             text-align: center;
             margin-top: 15px;
-            height: 20px;
             font-size: 14px;
         }
     </style>
 </head>
 <body>
-    <div class="floating-balls" id="balls"></div>
-    
     <div class="login-container">
         <div class="logo">
             <i class="material-icons">api</i>
             <h1>PurpleBot</h1>
         </div>
-        
         <form id="apiForm">
             <div class="input-group">
                 <i class="material-icons">vpn_key</i>
                 <input type="password" id="apiKey" required>
                 <label for="apiKey">API Token</label>
             </div>
-            
-            <button type="submit">
-                <span>Connect</span>
-            </button>
-            
+            <button type="submit"><span>Connect</span></button>
             <div class="error-message" id="errorMessage"></div>
             <div class="success-message" id="successMessage"></div>
         </form>
     </div>
-
     <script>
-        // Create floating balls
-        const ballsContainer = document.getElementById('balls');
-        for (let i = 0; i < 15; i++) {
-            const ball = document.createElement('div');
-            ball.classList.add('ball');
-            ball.style.width = `${Math.random() * 60 + 20}px`;
-            ball.style.height = ball.style.width;
-            ball.style.left = `${Math.random() * 100}%`;
-            ball.style.top = `${Math.random() * 100 + 100}%`;
-            ball.style.animationDuration = `${Math.random() * 20 + 10}s`;
-            ball.style.animationDelay = `${Math.random() * 5}s`;
-            ballsContainer.appendChild(ball);
-        }
-
-        // Form submission
         document.getElementById('apiForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
             const apiKey = document.getElementById('apiKey').value;
-            const errorElement = document.getElementById('errorMessage');
-            const successElement = document.getElementById('successMessage');
-            
-            errorElement.textContent = '';
-            successElement.textContent = '';
-            
-            if (!apiKey) {
-                errorElement.textContent = 'Please enter your API token';
-                return;
-            }
-
+            const errorEl = document.getElementById('errorMessage');
+            const successEl = document.getElementById('successMessage');
+            const btn = e.target.querySelector('button');
+            errorEl.textContent = '';
+            successEl.textContent = '';
+            btn.disabled = true;
+            btn.innerHTML = '<span>Connecting...</span>';
             try {
-                // Button loading state
-                const button = e.target.querySelector('button');
-                button.disabled = true;
-                button.innerHTML = '<span>Validating...</span>';
-                
-                const response = await fetch('/set-api-token', {
+                const res = await fetch('/set-api-token', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token: apiKey })
                 });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    successElement.textContent = data.message || 'API token validated successfully!';
-                    // Add beautiful transition
-                    document.querySelector('.login-container').style.animation = 'fadeIn 0.6s ease-out';
-                    // Redirect or do something on success
-                    setTimeout(() => {
-                        window.location.href = '/dashboard.html'; // Change to your dashboard page
-                    }, 1500);
+                const data = await res.json();
+                if (res.ok) {
+                    localStorage.setItem('purplebot_api_token', apiKey);
+                    successEl.textContent = data.message || 'Success! Redirecting...';
+                    setTimeout(() => window.location.href = '/dashboard.html', 1200);
                 } else {
-                    errorElement.textContent = data.error || 'Invalid API token';
-                    button.innerHTML = '<span>Connect</span>';
-                    button.disabled = false;
+                    errorEl.textContent = data.error || 'Invalid token';
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>Connect</span>';
                 }
             } catch (err) {
-                errorElement.textContent = 'Connection error. Please try again.';
-                console.error('API validation error:', err);
-                const button = e.target.querySelector('button');
-                button.innerHTML = '<span>Connect</span>';
-                button.disabled = false;
+                errorEl.textContent = 'Connection failed. Try again.';
+                btn.disabled = false;
+                btn.innerHTML = '<span>Connect</span>';
             }
         });
 
-        // Add floating label effect for browsers that don't support :valid
-        document.getElementById('apiKey').addEventListener('change', function() {
-            if (this.value) {
-                this.classList.add('has-value');
-            } else {
-                this.classList.remove('has-value');
+        document.addEventListener('DOMContentLoaded', async () => {
+            const savedToken = localStorage.getItem('purplebot_api_token');
+            if (!savedToken) return;
+            try {
+                const res = await fetch('/set-api-token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: savedToken })
+                });
+                if (res.ok) window.location.href = '/dashboard.html';
+                else localStorage.removeItem('purplebot_api_token');
+            } catch {
+                localStorage.removeItem('purplebot_api_token');
             }
         });
     </script>
-    <script>
-// Auto-redirect if already logged in
-document.addEventListener('DOMContentLoaded', async () => {
-    const savedToken = localStorage.getItem('purplebot_api_token');
-    if (!savedToken) return;
-    
-    try {
-        // Show loading state
-        document.querySelector('button[type="submit"]').innerHTML = 
-            '<span>Restoring session...</span>';
-        
-        // Validate token
-        const response = await fetch('/set-api-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: savedToken })
-        });
-        
-        if (response.ok) {
-            window.location.href = '/dashboard.html';
-        } else {
-            localStorage.removeItem('purplebot_api_token');
-        }
-    } catch (error) {
-        console.error('Session restore failed:', error);
-    }
-});
-
-// Update form submission to store token
-document.getElementById('apiForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const apiKey = document.getElementById('apiKey').value;
-    const btn = e.target.querySelector('button');
-    
-    btn.disabled = true;
-    btn.innerHTML = '<span>Connecting...</span>';
-    
-    try {
-        const response = await fetch('/set-api-token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: apiKey })
-        });
-        
-        if (response.ok) {
-            localStorage.setItem('purplebot_api_token', apiKey);
-            window.location.href = '/dashboard.html';
-        } else {
-            const error = await response.json();
-            document.getElementById('errorMessage').textContent = 
-                error.error || 'Invalid API token';
-        }
-    } catch (error) {
-        document.getElementById('errorMessage').textContent = 
-            'Connection failed. Try again.';
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<span>Connect</span>';
-    }
-});
-</script>
 </body>
 </html>
