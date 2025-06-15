@@ -1,7 +1,5 @@
-/**
- * PurpleBot-Node by Sanne Karibo
- * Main backend server for trading logic
- */
+// main.js
+//PurpleBot by Dr Sanne Karibo
 
 const express = require('express');
 const path = require('path');
@@ -9,20 +7,19 @@ const fs = require('fs').promises;
 const dotenv = require('dotenv');
 const deriv = require('./deriv');
 const indicators = require('./indicators');
-const express = require('express');
+const http = require('http');
+const { Server } = require('ws');
 const cors = require('cors');
-const app = express();
 
-// Enable All CORS Requests
-app.use(cors());  // This single line allows all origins
-
-// ... rest of your existing code (routes, etc.) ...
-
-app.listen(3000, () => console.log('Server running'));
 dotenv.config();
+
+const app = express();
+const server = http.createServer(app);
+const wss = new Server({ server });
 
 const PORT = process.env.PORT || 3000;
 
+app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
@@ -30,81 +27,70 @@ let tradingInterval = null;
 let lastProposal = null;
 const TRADE_INTERVAL_MS = 10 * 1000;
 
-// === Utility Functions ===
-async function updateEnvVariable(key, value) {
-  const envPath = path.join(__dirname, '.env');
-  try {
-    let envContent = '';
-    
-    try {
-      envContent = await fs.readFile(envPath, 'utf8');
-    } catch (readErr) {
-      if (readErr.code !== 'ENOENT') throw readErr;
-    }
-    
-    const lines = envContent.split('\n');
-    let found = false;
-    const newLines = lines.map(line => {
-      if (line.startsWith(`${key}=`)) {
-        found = true;
-        return `${key}=${value}`;
-      }
-      return line;
-    });
-    
-    if (!found) {
-      newLines.push(`${key}=${value}`);
-    }
-    
-    await fs.writeFile(envPath, newLines.join('\n'));
-    return true;
-  } catch (error) {
-    console.error(`[❌] Failed to update ${key}:`, error.message);
-    throw error;
-  }
-}
+// === WebSocket Broadcast ===
+wss.on('connection', (socket) => {
+  console.log('[🌐] WebSocket client connected');
 
-// === Chart Data ===
-app.get('/api/chart-data', async (req, res) => {
-  try {
+  const sendLiveData = async () => {
     const candles = deriv.candles || [];
-    const activeTrades = Array.from(deriv.openContracts?.values() || []);
-    const closedTrades = Array.from(deriv.closedContracts?.values() || []);
-    
-    if (candles.length < 20) {
-      return res.json({
-        candles,
-        activeTrades,
-        closedTrades,
-        indicators: {}
-      });
-    }
+    const indicatorResults = {
+      ema20: await indicators.calculateEMA(candles, 20),
+      rsi7: await indicators.calculateRSI(candles, 7),
+      fractals: await indicators.calculateBillWilliamsFractals(candles)
+    };
 
-    // Calculate indicators in parallel
-    const [ema20, rsi7, fractals] = await Promise.all([
-      indicators.calculateEMA(candles, 20),
-      indicators.calculateRSI(candles, 7),
-      indicators.calculateBillWilliamsFractals(candles)
-    ]);
-
-    res.json({
+    const data = {
+      type: 'update',
       candles,
-      activeTrades,
-      closedTrades,
-      indicators: {
-        ema20,
-        rsi7,
-        fractalHighs: fractals.fractalHighs,
-        fractalLows: fractals.fractalLows,
+      indicators: indicatorResults,
+      trades: {
+        active: Array.from(deriv.openContracts.values()),
+        closed: Array.from(deriv.closedContracts.values())
       },
-    });
-  } catch (error) {
-    console.error('[❗] Error in /api/chart-data:', error.message);
-    res.status(500).json({ error: 'Failed to fetch chart data' });
-  }
+      balance: deriv.getAccountBalance()
+    };
+
+    try {
+      socket.send(JSON.stringify(data));
+    } catch (err) {
+      console.error('[❌] WebSocket send failed:', err.message);
+    }
+  };
+
+  const interval = setInterval(sendLiveData, 3000);
+  socket.on('close', () => clearInterval(interval));
 });
 
-// === Symbol Management ===
+// === API Routes (reuse existing Express logic) ===
+
+app.post('/trade-start', (req, res) => {
+  if (tradingInterval) return res.status(409).json({ error: 'Already running' });
+  console.log('[🚀] Starting bot...');
+  tradingInterval = setInterval(tradingLoop, TRADE_INTERVAL_MS);
+  res.json({ message: 'Bot started' });
+});
+
+app.post('/trade-end', (req, res) => {
+  if (!tradingInterval) return res.status(409).json({ error: 'Bot not active' });
+  clearInterval(tradingInterval);
+  tradingInterval = null;
+  lastProposal = null;
+  console.log('[🛑] Bot stopped.');
+  res.json({ message: 'Bot stopped' });
+});
+
+app.post('/set-symbol', async (req, res) => {
+  const { symbol } = req.body;
+  if (!symbol) return res.status(400).json({ error: 'Missing symbol' });
+  const available = deriv.getAvailableSymbols();
+  if (!available.includes(symbol)) {
+    return res.status(400).json({ error: 'Invalid symbol', availableSymbols: available });
+  }
+  await updateEnvVariable('SYMBOL', symbol);
+  deriv.reconnectWithNewSymbol(symbol);
+  res.json({ message: 'Symbol updated' });
+});
+
 app.get('/symbol-info', (req, res) => {
   res.json({
     currentSymbol: deriv.getCurrentSymbol(),
@@ -112,183 +98,68 @@ app.get('/symbol-info', (req, res) => {
   });
 });
 
-app.post('/set-symbol', async (req, res) => {
-  const { symbol } = req.body;
-  
-  if (!symbol || typeof symbol !== 'string') {
-    return res.status(400).json({ 
-      error: 'Invalid symbol format',
-      availableSymbols: deriv.getAvailableSymbols() 
-    });
-  }
-
-  const availableSymbols = deriv.getAvailableSymbols();
-  if (!availableSymbols.includes(symbol)) {
-    return res.status(400).json({ 
-      error: 'Invalid symbol', 
-      availableSymbols 
-    });
-  }
-
+app.get('/api/balance', (req, res) => {
   try {
-    await updateEnvVariable('SYMBOL', symbol);
-    deriv.reconnectWithNewSymbol(symbol);
-    
-    res.json({ 
-      message: 'Symbol updated and connection refreshed',
-      currentSymbol: symbol
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      error: 'Failed to update symbol',
-      availableSymbols
-    });
+    deriv.requestBalance();
+    const balance = deriv.getAccountBalance();
+    if (balance === null) return res.status(202).json({ message: 'Fetching balance...' });
+    res.json({ balance });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve balance' });
   }
 });
 
-// === Trading Signal Detection ===
+async function updateEnvVariable(key, value) {
+  const envPath = path.join(__dirname, '.env');
+  try {
+    let content = '';
+    try { content = await fs.readFile(envPath, 'utf8'); } catch {}
+    const lines = content.split('\n');
+    const updated = lines.map(line => (line.startsWith(key + '=') ? `${key}=${value}` : line));
+    if (!lines.some(line => line.startsWith(key + '='))) updated.push(`${key}=${value}`);
+    await fs.writeFile(envPath, updated.join('\n'));
+  } catch (err) {
+    console.error(`[❌] Failed to update ${key}:`, err.message);
+    throw err;
+  }
+}
+
 function getTradingSignals() {
   const candles = deriv.candles;
   if (!candles || candles.length < 20) return null;
-
   try {
     const rsi = indicators.calculateRSI(candles, 7);
     const ema = indicators.calculateEMA(candles, 20);
-    if (!rsi || rsi.length < 1 || !ema || ema.length < 1) return null;
-
-    const latest = candles[candles.length - 1];
-    const prev1 = candles[candles.length - 2];
-    const prev2 = candles[candles.length - 3];
-
-    const buySignal = (
-      rsi[rsi.length - 1] > 55 &&
-      latest.close > ema[ema.length - 1] &&
-      latest.close > prev1.close &&
-      latest.close > prev2.close
-    );
-
-    const sellSignal = (
-      rsi[rsi.length - 1] < 45 &&
-      latest.close < ema[ema.length - 1] &&
-      latest.close < prev1.close &&
-      latest.close < prev2.close
-    );
-
-    return { buySignal, sellSignal };
-  } catch (error) {
-    console.error('[❌] Error calculating trading signals:', error);
+    const latest = candles.at(-1);
+    const prev1 = candles.at(-2);
+    const prev2 = candles.at(-3);
+    return {
+      buySignal: rsi.at(-1) > 55 && latest.close > ema.at(-1) && latest.close > prev1.close && latest.close > prev2.close,
+      sellSignal: rsi.at(-1) < 45 && latest.close < ema.at(-1) && latest.close < prev1.close && latest.close < prev2.close,
+    };
+  } catch (err) {
+    console.error('[❌] Signal Error:', err);
     return null;
   }
 }
 
-// === Proposal Handler ===
-let originalProposalHandler = deriv.handleProposal;
-deriv.handleProposal = (response) => {
-  if (response.proposal) {
-    lastProposal = response.proposal;
-    console.log(`[💡] New ${lastProposal.contract_type} proposal @ ${lastProposal.ask_price}`);
-  }
-  if (typeof originalProposalHandler === 'function') {
-    originalProposalHandler(response);
-  }
-};
-
-// === Trading Control ===
 function tradingLoop() {
-  try {
-    const signals = getTradingSignals();
-    if (!signals) return;
-
-    const { buySignal, sellSignal } = signals;
-
-    if (buySignal) {
-      if (lastProposal?.contract_type === 'CALL') {
-        console.log('[🟢] Executing CALL...');
-        deriv.buyContract(lastProposal.id, lastProposal.ask_price);
-        lastProposal = null;
-      } else {
-        console.log('[📨] Requesting CALL proposal...');
-        deriv.requestTradeProposal('CALL', 10, 5);
-      }
-    } else if (sellSignal) {
-      if (lastProposal?.contract_type === 'PUT') {
-        console.log('[🔴] Executing PUT...');
-        deriv.buyContract(lastProposal.id, lastProposal.ask_price);
-        lastProposal = null;
-      } else {
-        console.log('[📨] Requesting PUT proposal...');
-        deriv.requestTradeProposal('PUT', 10, 5);
-      }
-    }
-  } catch (err) {
-    console.error('[❌] Error in trading loop:', err.message);
+  const signals = getTradingSignals();
+  if (!signals) return;
+  if (signals.buySignal) {
+    if (lastProposal?.contract_type === 'CALL') {
+      deriv.buyContract(lastProposal.id, lastProposal.ask_price);
+      lastProposal = null;
+    } else deriv.requestTradeProposal('CALL', 10, 5);
+  } else if (signals.sellSignal) {
+    if (lastProposal?.contract_type === 'PUT') {
+      deriv.buyContract(lastProposal.id, lastProposal.ask_price);
+      lastProposal = null;
+    } else deriv.requestTradeProposal('PUT', 10, 5);
   }
 }
 
-app.post('/trade-start', (req, res) => {
-  if (tradingInterval) {
-    return res.status(409).json({ error: 'Trading already running' });
-  }
-
-  console.log('[🚀] Starting trading loop...');
-  tradingInterval = setInterval(tradingLoop, TRADE_INTERVAL_MS);
-  res.json({ message: 'Trading started' });
-});
-
-app.post('/trade-end', (req, res) => {
-  if (!tradingInterval) {
-    return res.status(409).json({ error: 'Trading not active' });
-  }
-
-  clearInterval(tradingInterval);
-  tradingInterval = null;
-  lastProposal = null;
-
-  console.log('[🛑] Trading stopped.');
-  res.json({ message: 'Trading stopped' });
-});
-
-// === API Token Management ===
-app.post('/set-api-token', async (req, res) => {
-  const { token } = req.body;
-  if (!token || typeof token !== 'string' || token.length < 20) {
-    return res.status(400).json({ error: 'Invalid token format' });
-  }
-
-  try {
-    await updateEnvVariable('DERIV_API_TOKEN', token);
-    deriv.reconnectWithNewToken(token);
-    
-    res.json({ message: 'API token updated and connection refreshed' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update token' });
-  }
-});
-// === Account Balance Endpoint ===
-app.get('/api/balance', (req, res) => {
-  try {
-    deriv.requestBalance(); // Triggers balance fetch/subscription if not yet done
-    const balance = deriv.getAccountBalance();
-    
-    if (balance === null) {
-      return res.status(202).json({ message: 'Balance is being retrieved, please try again shortly.' });
-    }
-
-    res.json({ balance });
-  } catch (error) {
-    console.error('[❗] Error fetching balance:', error.message);
-    res.status(500).json({ error: 'Failed to retrieve account balance' });
-  }
-});
-
-// === Error Handling Middleware ===
-app.use((err, req, res, next) => {
-  console.error('[🔥] Server Error:', err.stack);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
 // === Start Server ===
-app.listen(PORT, () => {
-  console.log(`[✅] PurpleBot-Node running at http://localhost:${PORT}`);
-  console.log(`[ℹ️] Current symbol: ${deriv.getCurrentSymbol()}`);
+server.listen(PORT, () => {
+  console.log(`[✅] PurpleBot backend running on http://localhost:${PORT}`);
 });
