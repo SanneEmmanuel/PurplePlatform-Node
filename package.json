@@ -1,13 +1,21 @@
 {
   "name": "purplebot-node",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "description": "A real-time trading bot using Deriv API with WebSocket dashboard.",
   "main": "main.js",
   "scripts": {
     "start": "node main.js"
   },
   "dependencies": {
-    "dotenv": "^16.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "ws": "^8.13.0"
-  }
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "keywords": ["deriv", "bot", "trading", "websocket", "express", "chart"],
+  "author": "Sanne Karibo",
+  "license": "MIT"
 }
