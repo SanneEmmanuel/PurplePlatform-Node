@@ -5,7 +5,7 @@ services:
     region: oregon  # or use frankfurt, singapore, etc.
     plan: free
     buildCommand: npm install
-    startCommand: node index.js
+    startCommand: node main.js
     envVars:
       - key: DERIV_API_TOKEN
         value: your_real_deriv_token_here
