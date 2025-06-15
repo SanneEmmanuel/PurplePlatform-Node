@@ -264,6 +264,22 @@ app.post('/set-api-token', async (req, res) => {
     res.status(500).json({ error: 'Failed to update token' });
   }
 });
+// === Account Balance Endpoint ===
+app.get('/api/balance', (req, res) => {
+  try {
+    deriv.requestBalance(); // Triggers balance fetch/subscription if not yet done
+    const balance = deriv.getAccountBalance();
+    
+    if (balance === null) {
+      return res.status(202).json({ message: 'Balance is being retrieved, please try again shortly.' });
+    }
+
+    res.json({ balance });
+  } catch (error) {
+    console.error('[❗] Error fetching balance:', error.message);
+    res.status(500).json({ error: 'Failed to retrieve account balance' });
+  }
+});
 
 // === Error Handling Middleware ===
 app.use((err, req, res, next) => {
