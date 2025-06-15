@@ -1,20 +1,21 @@
+// deriv.js
 const WebSocket = require('ws');
 require('dotenv').config();
 
-const API_TOKEN = process.env.DERIV_API_TOKEN || 'your_api_token_here';
+const API_TOKEN = process.env.DERIV_API_TOKEN;
 const SYMBOL = process.env.SYMBOL;
 const GRANULARITY = 60;
 const COUNT = 100;
 
+let ws = null;
+let reconnecting = false;
+
 const candles = [];
 const openContracts = new Map();
 const closedContracts = new Map();
-
-let ws = null;
-let reconnecting = false;
 let availableSymbols = [];
+let accountBalance = null;
 let onInvalidSymbol = null;
-let accountBalance = null; // 💰 New: holds latest balance
 
 function connect() {
   ws = new WebSocket('wss://ws.derivws.com/websockets/v3');
@@ -33,10 +34,7 @@ function connect() {
     }
   });
 
-  ws.on('error', (err) => {
-    console.error('[⚠️] WebSocket Error:', err.message);
-  });
-
+  ws.on('error', (err) => console.error('[⚠️] WebSocket Error:', err.message));
   ws.on('close', () => {
     console.log('[🔌] WebSocket closed. Reconnecting...');
     if (!reconnecting) {
@@ -47,7 +45,7 @@ function connect() {
 }
 
 function send(data) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(data));
   }
 }
@@ -55,81 +53,58 @@ function send(data) {
 function handleMessage(msg) {
   switch (msg.msg_type) {
     case 'authorize':
-      console.log('[🔐] Authorized as:', msg.authorize.loginid);
+      console.log('[🔐] Authorized:', msg.authorize.loginid);
       requestActiveSymbols();
-      requestBalance(); // 💰 New: request balance after auth
+      requestBalance();
       break;
-
     case 'active_symbols':
       handleActiveSymbols(msg);
       break;
-
     case 'candles':
     case 'ohlc':
       updateCandles(msg);
       break;
-
     case 'proposal':
       if (exports.handleProposal) exports.handleProposal(msg);
       break;
-
     case 'buy':
       handleBuy(msg);
       break;
-
     case 'proposal_open_contract':
       handleOpenContract(msg);
       break;
-
     case 'balance':
-      handleBalance(msg); // 💰 New: handle balance updates
+      handleBalance(msg);
       break;
-
     case 'error':
       console.error('[❌] API Error:', msg.error.message);
-      break;
-
-    default:
-      // console.log('[ℹ️] Unhandled msg_type:', msg.msg_type);
       break;
   }
 }
 
 function requestActiveSymbols() {
-  send({
-    active_symbols: 'brief',
-    product_type: 'basic',
-  });
+  send({ active_symbols: 'brief', product_type: 'basic' });
 }
 
 function handleActiveSymbols(msg) {
   availableSymbols = msg.active_symbols.map((s) => s.symbol);
-
   if (!availableSymbols.includes(SYMBOL)) {
     console.error(`[❌] SYMBOL '${SYMBOL}' is invalid.`);
-    if (typeof onInvalidSymbol === 'function') {
-      onInvalidSymbol(availableSymbols);
-    }
+    if (typeof onInvalidSymbol === 'function') onInvalidSymbol(availableSymbols);
     ws.close();
     return;
   }
-
   console.log(`[✅] SYMBOL '${SYMBOL}' is valid.`);
   subscribeToCandles();
 }
 
 function subscribeToCandles() {
-  send({
-    candles: SYMBOL,
-    granularity: GRANULARITY,
-    subscribe: 1,
-  });
+  send({ candles: SYMBOL, granularity: GRANULARITY, subscribe: 1 });
 }
 
 function updateCandles(msg) {
   if (msg.ohlc) {
-    const updated = msg.ohlc;
-    candles.push(updated);
+    candles.push(msg.ohlc);
     if (candles.length > COUNT) candles.shift();
   } else if (msg.candles) {
     candles.splice(0, candles.length, ...msg.candles);
@@ -137,7 +112,7 @@ function updateCandles(msg) {
 }
 
 function requestTradeProposal(contractType, amount, duration, durationUnit = 'm') {
-  const proposal = {
+  send({
     proposal: 1,
     subscribe: 1,
     amount,
@@ -147,17 +122,11 @@ function requestTradeProposal(contractType, amount, duration, durationUnit = 'm'
     duration,
     duration_unit: durationUnit,
     symbol: SYMBOL,
-  };
-  send(proposal);
+  });
 }
 
 function buyContract(proposalId, price) {
-  const buy = {
-    buy: proposalId,
-    price,
-    subscribe: 1,
-  };
-  send(buy);
+  send({ buy: proposalId, price, subscribe: 1 });
 }
 
 function handleBuy(msg) {
@@ -166,19 +135,13 @@ function handleBuy(msg) {
 }
 
 function subscribeToOpenContract(contractId) {
-  send({
-    proposal_open_contract: 1,
-    contract_id: contractId,
-    subscribe: 1,
-  });
+  send({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
 }
 
 function handleOpenContract(msg) {
   const contract = msg.proposal_open_contract;
   if (!contract) return;
-
   const { contract_id, is_sold } = contract;
-
   if (is_sold) {
     openContracts.delete(contract_id);
     closedContracts.set(contract_id, contract);
@@ -189,42 +152,46 @@ function handleOpenContract(msg) {
   }
 }
 
-// 💰 Request balance (subscribe to balance updates)
 function requestBalance() {
-  send({
-    balance: 1,
-    subscribe: 1,
-  });
+  send({ balance: 1, subscribe: 1 });
 }
 
-// 💰 Handle balance updates
 function handleBalance(msg) {
-  if (msg.balance && typeof msg.balance.balance === 'number') {
+  if (msg.balance?.balance) {
     accountBalance = msg.balance.balance;
-    console.log(`[💰] Account balance: $${accountBalance.toFixed(2)}`);
+    console.log(`[💰] Balance: $${accountBalance.toFixed(2)}`);
   }
 }
 
-// === Init WebSocket ===
+// Start on load
 connect();
 
-// Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[🛑] Shutting down...');
   if (ws) ws.close();
   process.exit();
 });
 
-// === Exports ===
 module.exports = {
   candles,
   openContracts,
   closedContracts,
   requestTradeProposal,
   buyContract,
-  handleProposal: null,
-  setOnInvalidSymbol: (cb) => { onInvalidSymbol = cb; },
+  getAccountBalance: () => accountBalance,
+  requestBalance,
+  setOnInvalidSymbol: (cb) => (onInvalidSymbol = cb),
   getAvailableSymbols: () => availableSymbols,
-  requestBalance, // 💰 exported
-  getAccountBalance: () => accountBalance, // 💰 exported
+  getCurrentSymbol: () => SYMBOL,
+  reconnectWithNewSymbol: (newSymbol) => {
+    process.env.SYMBOL = newSymbol;
+    reconnecting = false;
+    if (ws) ws.close();
+  },
+  reconnectWithNewToken: (token) => {
+    process.env.DERIV_API_TOKEN = token;
+    reconnecting = false;
+    if (ws) ws.close();
+  },
+  handleProposal: null
 };
