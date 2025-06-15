@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: purplebot-node
+    env: node
+    region: oregon  # or use frankfurt, singapore, etc.
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: DERIV_API_TOKEN
+        value: your_real_deriv_token_here
+      - key: SYMBOL
+        value: Jump75
+      - key: PORT
+        value: 3000
