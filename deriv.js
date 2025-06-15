@@ -14,6 +14,7 @@ let ws = null;
 let reconnecting = false;
 let availableSymbols = [];
 let onInvalidSymbol = null;
+let accountBalance = null; // 💰 New: holds latest balance
 
 function connect() {
   ws = new WebSocket('wss://ws.derivws.com/websockets/v3');
@@ -55,7 +56,8 @@ function handleMessage(msg) {
   switch (msg.msg_type) {
     case 'authorize':
       console.log('[🔐] Authorized as:', msg.authorize.loginid);
-      requestActiveSymbols(); // Request available symbols on auth
+      requestActiveSymbols();
+      requestBalance(); // 💰 New: request balance after auth
       break;
 
     case 'active_symbols':
@@ -77,6 +79,10 @@ function handleMessage(msg) {
 
     case 'proposal_open_contract':
       handleOpenContract(msg);
+      break;
+
+    case 'balance':
+      handleBalance(msg); // 💰 New: handle balance updates
       break;
 
     case 'error':
@@ -104,7 +110,7 @@ function handleActiveSymbols(msg) {
     if (typeof onInvalidSymbol === 'function') {
       onInvalidSymbol(availableSymbols);
     }
-    ws.close(); // Prevent continuing with an invalid symbol
+    ws.close();
     return;
   }
 
@@ -183,6 +189,22 @@ function handleOpenContract(msg) {
   }
 }
 
+// 💰 Request balance (subscribe to balance updates)
+function requestBalance() {
+  send({
+    balance: 1,
+    subscribe: 1,
+  });
+}
+
+// 💰 Handle balance updates
+function handleBalance(msg) {
+  if (msg.balance && typeof msg.balance.balance === 'number') {
+    accountBalance = msg.balance.balance;
+    console.log(`[💰] Account balance: $${accountBalance.toFixed(2)}`);
+  }
+}
+
 // === Init WebSocket ===
 connect();
 
@@ -200,7 +222,9 @@ module.exports = {
   closedContracts,
   requestTradeProposal,
   buyContract,
-  handleProposal: null, // to be overridden in main.js
+  handleProposal: null,
   setOnInvalidSymbol: (cb) => { onInvalidSymbol = cb; },
   getAvailableSymbols: () => availableSymbols,
+  requestBalance, // 💰 exported
+  getAccountBalance: () => accountBalance, // 💰 exported
 };
