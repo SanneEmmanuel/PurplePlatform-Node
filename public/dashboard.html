@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PurpleBot Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@material/web@1.0.0/material.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      margin: 0;
+      background: #121212;
+      color: #fff;
+      overflow: hidden;
+    }
+    header {
+      padding: 1rem;
+      background: linear-gradient(90deg, #6a00f4, #9b00ff);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      animation: slideInDown 1s ease-out;
+    }
+    .container {
+      display: flex;
+      height: calc(100vh - 120px);
+      animation: fadeIn 1.5s;
+    }
+    .sidebar {
+      width: 250px;
+      background: #1f1f1f;
+      padding: 1rem;
+      border-right: 2px solid #444;
+      overflow-y: auto;
+    }
+    .main {
+      flex: 1;
+      padding: 1rem;
+    }
+    canvas {
+      background-color: #1a1a1a;
+      border-radius: 10px;
+    }
+    .bottom-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 1rem;
+      animation: slideInUp 1s ease-out;
+    }
+    .indicator-value {
+      margin-bottom: 1rem;
+    }
+    @keyframes slideInDown {
+      from { transform: translateY(-100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes slideInUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    input[type="text"] {
+      padding: 0.5rem;
+      width: 200px;
+      border: none;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <input type="text" id="symbolInput" placeholder="Enter Symbol...">
+      <span id="symbolError" style="color: red; display: none;">Invalid symbol. Try: <span id="suggestions"></span></span>
+    </div>
+    <div id="accountBalance">Balance: $0.00</div>
+  </header>
+
+  <div class="container">
+    <aside class="sidebar">
+      <h3>Indicators</h3>
+      <div class="indicator-value">EMA(20): <span id="ema20">--</span></div>
+      <div class="indicator-value">RSI(7): <span id="rsi7">--</span></div>
+      <div class="indicator-value">Fractals: <span id="fractals">--</span></div>
+    </aside>
+    <main class="main">
+      <canvas id="chartCanvas"></canvas>
+    </main>
+  </div>
+
+  <div class="bottom-controls">
+    <button onclick="startBot()" class="md-outlined-button">Start Bot</button>
+    <button onclick="stopBot()" class="md-outlined-button">Stop Bot</button>
+  </div>
+
+  <script>
+    const ctx = document.getElementById('chartCanvas').getContext('2d');
+    let chart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [] },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    async function fetchData() {
+      const res = await fetch('/api/chart-data');
+      const data = await res.json();
+
+      document.getElementById('ema20').textContent = data.indicators.ema20?.at(-1)?.toFixed(2) || '--';
+      document.getElementById('rsi7').textContent = data.indicators.rsi7?.at(-1)?.toFixed(2) || '--';
+      document.getElementById('fractals').textContent = `${data.indicators.fractalHighs?.length || 0} / ${data.indicators.fractalLows?.length || 0}`;
+
+      const labels = data.candles.map(c => new Date(c.epoch * 1000).toLocaleTimeString());
+      const prices = data.candles.map(c => parseFloat(c.close));
+
+      const trades = [...data.activeTrades, ...data.closedTrades];
+      const tradeMarkers = trades.map(t => {
+        return {
+          label: t.contract_type + ' ' + t.contract_id,
+          data: [{x: new Date(t.entry_tick_time * 1000).toLocaleTimeString(), y: t.entry_tick}],
+          borderColor: t.contract_type === 'CALL' ? 'green' : 'red',
+          borderWidth: 2,
+          pointRadius: 5,
+          type: 'scatter'
+        };
+      });
+
+      chart.data = {
+        labels,
+        datasets: [
+          {
+            label: 'Price',
+            data: prices,
+            borderColor: '#6a00f4',
+            fill: false
+          },
+          ...tradeMarkers
+        ]
+      };
+      chart.update();
+    }
+
+    async function fetchBalance() {
+      const res = await fetch('/api/balance');
+      const data = await res.json();
+      if (data.balance) {
+        document.getElementById('accountBalance').textContent = `Balance: $${data.balance.toFixed(2)}`;
+      }
+    }
+
+    async function validateSymbolInput() {
+      const symbol = document.getElementById('symbolInput').value.trim();
+      const res = await fetch('/set-symbol', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol })
+      });
+      const data = await res.json();
+      const errorEl = document.getElementById('symbolError');
+      if (res.status !== 200) {
+        errorEl.style.display = 'inline';
+        document.getElementById('suggestions').textContent = data.availableSymbols.join(', ');
+      } else {
+        errorEl.style.display = 'none';
+      }
+    }
+
+    function startBot() {
+      fetch('/trade-start', { method: 'POST' });
+    }
+
+    function stopBot() {
+      fetch('/trade-end', { method: 'POST' });
+    }
+
+    document.getElementById('symbolInput').addEventListener('change', validateSymbolInput);
+
+    setInterval(fetchData, 5000);
+    setInterval(fetchBalance, 10000);
+    fetchData();
+    fetchBalance();
+  </script>
+</body>
+</html>
