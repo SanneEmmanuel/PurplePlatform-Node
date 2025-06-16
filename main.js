@@ -124,19 +124,60 @@ async function updateEnvVariable(key, value) {
   }
 }
 
+// ... (previous code remains unchanged until getTradingSignals function) ...
+
 function getTradingSignals() {
   const candles = deriv.candles;
   if (!candles || candles.length < 20) return null;
+  
   try {
     const rsi = indicators.calculateRSI(candles, 7);
-    const ema = indicators.calculateEMA(candles, 20);
+    const ema20 = indicators.calculateEMA(candles, 20);
+    const fractals = indicators.calculateBillWilliamsFractals(candles);
+    
+    // Get necessary candles
     const latest = candles.at(-1);
     const prev1 = candles.at(-2);
     const prev2 = candles.at(-3);
-    return {
-      buySignal: rsi.at(-1) > 55 && latest.close > ema.at(-1) && latest.close > prev1.close && latest.close > prev2.close,
-      sellSignal: rsi.at(-1) < 45 && latest.close < ema.at(-1) && latest.close < prev1.close && latest.close < prev2.close,
-    };
+    const prev3 = candles.at(-4);
+    const prev4 = candles.at(-5);
+
+    // Calculate highest high of last two completed candles
+    const highestHigh = Math.max(prev1.high, prev2.high);
+    
+    // Calculate fractal levels (confirmed fractals only)
+    let lastUpperFractal = null;
+    let lastLowerFractal = null;
+    
+    // Find most recent confirmed fractal (skip last 2 candles)
+    for (let i = fractals.upper.length - 3; i >= 0; i--) {
+      if (fractals.upper[i] !== null) {
+        lastUpperFractal = fractals.upper[i];
+        break;
+      }
+    }
+    for (let i = fractals.lower.length - 3; i >= 0; i--) {
+      if (fractals.lower[i] !== null) {
+        lastLowerFractal = fractals.lower[i];
+        break;
+      }
+    }
+
+    // Enhanced Entry Logic
+    const buySignal = 
+      rsi.at(-2) > 55 &&  // RSI 1 period ago
+      prev1.close > ema20.at(-2) &&  // Price > EMA20 1 period ago
+      latest.close > highestHigh &&  // Close > highest high of last two candles
+      latest.close > lastLowerFractal;  // Price above recent support
+
+    const sellSignal = 
+      rsi.at(-2) < 45 &&  // RSI 1 period ago
+      prev1.close < ema20.at(-2) &&  // Price < EMA20 1 period ago
+      latest.close < Math.min(prev1.low, prev2.low) &&  // Close < lowest low of last two candles
+      latest.close < lastUpperFractal;  // Price below recent resistance
+
+    return { buySignal, sellSignal, lastUpperFractal, lastLowerFractal };
+    
   } catch (err) {
     console.error('[❌] Signal Error:', err);
     return null;
@@ -146,18 +187,31 @@ function getTradingSignals() {
 function tradingLoop() {
   const signals = getTradingSignals();
   if (!signals) return;
+  
+  // Store fractal levels for potential TP/SL use
+  deriv.lastUpperFractal = signals.lastUpperFractal;
+  deriv.lastLowerFractal = signals.lastLowerFractal;
+
   if (signals.buySignal) {
     if (lastProposal?.contract_type === 'CALL') {
       deriv.buyContract(lastProposal.id, lastProposal.ask_price);
       lastProposal = null;
-    } else deriv.requestTradeProposal('CALL', 10, 5);
-  } else if (signals.sellSignal) {
+    } else {
+      deriv.requestTradeProposal('CALL', 10, 5);
+    }
+  } 
+  else if (signals.sellSignal) {
     if (lastProposal?.contract_type === 'PUT') {
       deriv.buyContract(lastProposal.id, lastProposal.ask_price);
       lastProposal = null;
-    } else deriv.requestTradeProposal('PUT', 10, 5);
+    } else {
+      deriv.requestTradeProposal('PUT', 10, 5);
+    }
   }
 }
+
+// ... (remaining code stays the same) ...
+
 
 // === Start Server ===
 server.listen(PORT, () => {
