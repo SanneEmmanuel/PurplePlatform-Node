@@ -1,4 +1,4 @@
-// deriv.js with retry and resilience
+// deriv.js with connection fix, retry, and resilience
 const DerivAPIBasic = require('@deriv/deriv-api/dist/DerivAPIBasic');
 const WebSocket = require('ws');
 require('dotenv').config();
@@ -37,6 +37,12 @@ async function connect() {
   isConnecting = true;
   try {
     createConnection();
+
+    await new Promise((resolve, reject) => {
+      connection.on('open', resolve);
+      connection.on('error', reject);
+    });
+
     await api.account.authorize(API_TOKEN);
     console.log('[✅] Authorized:', (await api.account.getAccount()).loginid);
 
