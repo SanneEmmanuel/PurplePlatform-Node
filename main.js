@@ -116,7 +116,7 @@ app.post('/set-api-token', async (req, res) => {
 
 app.get('/api/balance', (req, res) => {
   try {
-    deriv.requestBalance();
+    deriv.requestBalance?.();
     const balance = deriv.getAccountBalance();
     if (balance === null) return res.status(202).json({ message: 'Fetching balance...' });
     res.json({ balance });
@@ -174,6 +174,8 @@ function getTradingSignals() {
     const prev1 = candles.at(-2);
     const prev2 = candles.at(-3);
 
+    if (!latest || !prev1 || !prev2) return null;
+
     const highestHigh = Math.max(prev1.high, prev2.high);
     const lowestLow = Math.min(prev1.low, prev2.low);
 
@@ -212,7 +214,6 @@ function getTradingSignals() {
       lastUpperFractal,
       lastLowerFractal
     };
-
   } catch (err) {
     console.error('[❌] Signal Error:', err);
     return null;
@@ -224,8 +225,12 @@ function tradingLoop() {
   if (!candles || candles.length < 20) return;
 
   const latest = candles.at(-1);
-  const currentEpoch = latest.epoch;
+  if (!latest || typeof latest.close === 'undefined') {
+    console.warn('[⚠️] Skipping trade loop — no latest candle');
+    return;
+  }
 
+  const currentEpoch = latest.epoch;
   if (currentEpoch === lastCandleEpoch) return;
   lastCandleEpoch = currentEpoch;
 
@@ -235,10 +240,8 @@ function tradingLoop() {
   deriv.lastUpperFractal = signals.lastUpperFractal;
   deriv.lastLowerFractal = signals.lastLowerFractal;
 
-  const openBuyContracts = Array.from(deriv.openContracts.values())
-    .filter(c => c.contract_type === 'CALL');
-  const openSellContracts = Array.from(deriv.openContracts.values())
-    .filter(c => c.contract_type === 'PUT');
+  const openBuyContracts = Array.from(deriv.openContracts.values()).filter(c => c.contract_type === 'CALL');
+  const openSellContracts = Array.from(deriv.openContracts.values()).filter(c => c.contract_type === 'PUT');
 
   if (signals.buySignal && openBuyContracts.length < 5) {
     if (lastProposal?.contract_type === 'CALL') {
@@ -264,36 +267,24 @@ function tradingLoop() {
 
   if (latest.close < signals.lowestLow && openBuyContracts.length > 0) {
     console.log('[🚨] STOPLOSS BUY: Closing all BUYs');
-    for (const c of openBuyContracts) {
-      deriv.buyContract(c.contract_id, 0);
-    }
+    for (const c of openBuyContracts) deriv.buyContract(c.contract_id, 0);
   }
 
   if (latest.close > signals.highestHigh && openSellContracts.length > 0) {
     console.log('[🚨] STOPLOSS SELL: Closing all SELLs');
-    for (const c of openSellContracts) {
-      deriv.buyContract(c.contract_id, 0);
-    }
+    for (const c of openSellContracts) deriv.buyContract(c.contract_id, 0);
   }
 
-  const allBuyProfitable = openBuyContracts.length > 0 &&
-    openBuyContracts.every(c => c.profit > 0 && latest.close > signals.lastLowerFractal);
-
+  const allBuyProfitable = openBuyContracts.length > 0 && openBuyContracts.every(c => c.profit > 0 && latest.close > signals.lastLowerFractal);
   if (allBuyProfitable) {
     console.log('[💰] PROFIT: Closing all BUYs in profit');
-    for (const c of openBuyContracts) {
-      deriv.buyContract(c.contract_id, 0);
-    }
+    for (const c of openBuyContracts) deriv.buyContract(c.contract_id, 0);
   }
 
-  const allSellProfitable = openSellContracts.length > 0 &&
-    openSellContracts.every(c => c.profit > 0 && latest.close < signals.lastUpperFractal);
-
+  const allSellProfitable = openSellContracts.length > 0 && openSellContracts.every(c => c.profit > 0 && latest.close < signals.lastUpperFractal);
   if (allSellProfitable) {
     console.log('[💰] PROFIT: Closing all SELLs in profit');
-    for (const c of openSellContracts) {
-      deriv.buyContract(c.contract_id, 0);
-    }
+    for (const c of openSellContracts) deriv.buyContract(c.contract_id, 0);
   }
 }
 
