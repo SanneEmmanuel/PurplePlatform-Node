@@ -3,8 +3,7 @@
 // - deriv-api: Official Deriv WebSocket SDK (https://github.com/binary-com/deriv-api)
 // - ws: WebSocket client (required by deriv-api)
 // - dotenv: To load .env variables
-
-const { DerivAPI } = require('deriv-api');
+const { DerivAPI } = require('@deriv/deriv-api');
 const WebSocket = require('ws');
 require('dotenv').config();
 
