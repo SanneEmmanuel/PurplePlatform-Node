@@ -1,5 +1,5 @@
 // main.js
-//PurpleBot by Dr Sanne Karibo
+// PurpleBot by Dr Sanne Karibo
 
 const express = require('express');
 const path = require('path');
@@ -61,7 +61,7 @@ wss.on('connection', (socket) => {
   socket.on('close', () => clearInterval(interval));
 });
 
-// === API Routes (reuse existing Express logic) ===
+// === API Routes ===
 
 app.post('/trade-start', (req, res) => {
   if (tradingInterval) return res.status(409).json({ error: 'Already running' });
@@ -94,7 +94,8 @@ app.post('/set-symbol', async (req, res) => {
 app.get('/symbol-info', (req, res) => {
   res.json({
     currentSymbol: deriv.getCurrentSymbol(),
-    availableSymbols: deriv.getAvailableSymbols()
+    availableSymbols: deriv.getAvailableSymbols(),
+    symbolDetails: deriv.getSymbolDetails()
   });
 });
 
@@ -138,160 +139,6 @@ async function updateEnvVariable(key, value) {
     throw err;
   }
 }
-
-// ... (previous code remains unchanged until getTradingSignals function) ...
-
-let lastCandleEpoch = 0;
-
-function getTradingSignals() {
-  const candles = deriv.candles;
-  if (!candles || candles.length < 20) return null;
-
-  try {
-    const rsi = indicators.calculateRSI(candles, 7);
-    const ema20 = indicators.calculateEMA(candles, 20);
-    const fractals = indicators.calculateBillWilliamsFractals(candles);
-
-    const latest = candles.at(-1);
-    const prev1 = candles.at(-2);
-    const prev2 = candles.at(-3);
-
-    const highestHigh = Math.max(prev1.high, prev2.high);
-    const lowestLow = Math.min(prev1.low, prev2.low);
-
-    // Get last confirmed fractals (skip last 2 candles)
-    let lastUpperFractal = null;
-    let lastLowerFractal = null;
-    for (let i = fractals.upper.length - 3; i >= 0; i--) {
-      if (fractals.upper[i] !== null) {
-        lastUpperFractal = fractals.upper[i];
-        break;
-      }
-    }
-    for (let i = fractals.lower.length - 3; i >= 0; i--) {
-      if (fractals.lower[i] !== null) {
-        lastLowerFractal = fractals.lower[i];
-        break;
-      }
-    }
-
-    // === BUY SIGNAL RULES ===
-    const buySignal =
-      rsi.at(-2) > 55 &&
-      prev1.close > ema20.at(-2) &&
-      latest.close > highestHigh &&
-      latest.close < lastUpperFractal;
-
-    // === SELL SIGNAL RULES ===
-    const sellSignal =
-      rsi.at(-2) < 45 &&
-      prev1.close < ema20.at(-2) &&
-      latest.close < lowestLow &&
-      latest.close > lastLowerFractal;
-
-    return {
-      buySignal,
-      sellSignal,
-      highestHigh,
-      lowestLow,
-      lastUpperFractal,
-      lastLowerFractal
-    };
-
-  } catch (err) {
-    console.error('[❌] Signal Error:', err);
-    return null;
-  }
-}
-
-function tradingLoop() {
-  const candles = deriv.candles;
-  if (!candles || candles.length < 20) return;
-
-  const latest = candles.at(-1);
-  const currentEpoch = latest.epoch;
-
-  // ✅ Only run on a new candle
-  if (currentEpoch === lastCandleEpoch) return;
-  lastCandleEpoch = currentEpoch;
-
-  const signals = getTradingSignals();
-  if (!signals) return;
-
-  deriv.lastUpperFractal = signals.lastUpperFractal;
-  deriv.lastLowerFractal = signals.lastLowerFractal;
-
-  const openBuyContracts = Array.from(deriv.openContracts.values())
-    .filter(c => c.contract_type === 'CALL');
-  const openSellContracts = Array.from(deriv.openContracts.values())
-    .filter(c => c.contract_type === 'PUT');
-
-  // === ENTRY: BUY ===
-  if (signals.buySignal && openBuyContracts.length < 5) {
-    if (lastProposal?.contract_type === 'CALL') {
-      console.log('[🟢] Executing BUY contract at breakout');
-      deriv.buyContract(lastProposal.id, lastProposal.ask_price);
-      lastProposal = null;
-    } else {
-      console.log('[📨] Requesting new BUY proposal');
-      deriv.requestTradeProposal('CALL', 10, 5);
-    }
-  }
-
-  // === ENTRY: SELL ===
-  if (signals.sellSignal && openSellContracts.length < 5) {
-    if (lastProposal?.contract_type === 'PUT') {
-      console.log('[🔴] Executing SELL contract at breakdown');
-      deriv.buyContract(lastProposal.id, lastProposal.ask_price);
-      lastProposal = null;
-    } else {
-      console.log('[📨] Requesting new SELL proposal');
-      deriv.requestTradeProposal('PUT', 10, 5);
-    }
-  }
-
-  // === STOP LOSS: BUY ===
-  if (latest.close < signals.lowestLow && openBuyContracts.length > 0) {
-    console.log('[🚨] STOPLOSS BUY: Closing all BUYs');
-    for (const c of openBuyContracts) {
-      deriv.buyContract(c.contract_id, 0); // market sell
-    }
-  }
-
-  // === STOP LOSS: SELL ===
-  if (latest.close > signals.highestHigh && openSellContracts.length > 0) {
-    console.log('[🚨] STOPLOSS SELL: Closing all SELLs');
-    for (const c of openSellContracts) {
-      deriv.buyContract(c.contract_id, 0); // market sell
-    }
-  }
-
-  // === TAKE PROFIT: BUY ===
-  const allBuyProfitable = openBuyContracts.length > 0 &&
-    openBuyContracts.every(c => c.profit > 0 && latest.close > signals.lastLowerFractal);
-
-  if (allBuyProfitable) {
-    console.log('[💰] PROFIT: Closing all BUYs in profit');
-    for (const c of openBuyContracts) {
-      deriv.buyContract(c.contract_id, 0); // market sell
-    }
-  }
-
-  // === TAKE PROFIT: SELL ===
-  const allSellProfitable = openSellContracts.length > 0 &&
-    openSellContracts.every(c => c.profit > 0 && latest.close < signals.lastUpperFractal);
-
-  if (allSellProfitable) {
-    console.log('[💰] PROFIT: Closing all SELLs in profit');
-    for (const c of openSellContracts) {
-      deriv.buyContract(c.contract_id, 0); // market sell
-    }
-  }
-}
-
-
-// ... (remaining code stays the same) ...
-
 
 // === Start Server ===
 server.listen(PORT, () => {
