@@ -98,6 +98,21 @@ app.get('/symbol-info', (req, res) => {
   });
 });
 
+app.post('/set-api-token', async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: 'Missing API token' });
+
+  try {
+    await updateEnvVariable('DERIV_API_TOKEN', token);
+    deriv.reconnectWithNewToken(token);
+    console.log('[🔐] API Token updated');
+    res.json({ message: 'API token set successfully' });
+  } catch (err) {
+    console.error('[❌] Failed to set API token:', err.message);
+    res.status(500).json({ error: 'Failed to update token' });
+  }
+});
+
 app.get('/api/balance', (req, res) => {
   try {
     deriv.requestBalance();
