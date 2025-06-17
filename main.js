@@ -125,6 +125,25 @@ app.get('/api/balance', (req, res) => {
   }
 });
 
+app.get('/api/chart-data', (req, res) => {
+  const candles = deriv.candles;
+  const ema20 = indicators.calculateEMA(candles, 20);
+  const rsi7 = indicators.calculateRSI(candles, 7);
+  const fractals = indicators.calculateBillWilliamsFractals(candles);
+
+  const indicatorResults = {
+    ema20,
+    rsi7,
+    fractalHighs: fractals.upper,
+    fractalLows: fractals.lower
+  };
+
+  const activeTrades = Array.from(deriv.openContracts.values());
+  const closedTrades = Array.from(deriv.closedContracts.values());
+
+  res.json({ candles, indicators: indicatorResults, activeTrades, closedTrades });
+});
+
 async function updateEnvVariable(key, value) {
   const envPath = path.join(__dirname, '.env');
   try {
@@ -140,7 +159,144 @@ async function updateEnvVariable(key, value) {
   }
 }
 
-// === Start Server ===
+let lastCandleEpoch = 0;
+
+function getTradingSignals() {
+  const candles = deriv.candles;
+  if (!candles || candles.length < 20) return null;
+
+  try {
+    const rsi = indicators.calculateRSI(candles, 7);
+    const ema20 = indicators.calculateEMA(candles, 20);
+    const fractals = indicators.calculateBillWilliamsFractals(candles);
+
+    const latest = candles.at(-1);
+    const prev1 = candles.at(-2);
+    const prev2 = candles.at(-3);
+
+    const highestHigh = Math.max(prev1.high, prev2.high);
+    const lowestLow = Math.min(prev1.low, prev2.low);
+
+    let lastUpperFractal = null;
+    let lastLowerFractal = null;
+    for (let i = fractals.upper.length - 3; i >= 0; i--) {
+      if (fractals.upper[i] !== null) {
+        lastUpperFractal = fractals.upper[i];
+        break;
+      }
+    }
+    for (let i = fractals.lower.length - 3; i >= 0; i--) {
+      if (fractals.lower[i] !== null) {
+        lastLowerFractal = fractals.lower[i];
+        break;
+      }
+    }
+
+    const buySignal =
+      rsi.at(-2) > 55 &&
+      prev1.close > ema20.at(-2) &&
+      latest.close > highestHigh &&
+      latest.close < lastUpperFractal;
+
+    const sellSignal =
+      rsi.at(-2) < 45 &&
+      prev1.close < ema20.at(-2) &&
+      latest.close < lowestLow &&
+      latest.close > lastLowerFractal;
+
+    return {
+      buySignal,
+      sellSignal,
+      highestHigh,
+      lowestLow,
+      lastUpperFractal,
+      lastLowerFractal
+    };
+
+  } catch (err) {
+    console.error('[❌] Signal Error:', err);
+    return null;
+  }
+}
+
+function tradingLoop() {
+  const candles = deriv.candles;
+  if (!candles || candles.length < 20) return;
+
+  const latest = candles.at(-1);
+  const currentEpoch = latest.epoch;
+
+  if (currentEpoch === lastCandleEpoch) return;
+  lastCandleEpoch = currentEpoch;
+
+  const signals = getTradingSignals();
+  if (!signals) return;
+
+  deriv.lastUpperFractal = signals.lastUpperFractal;
+  deriv.lastLowerFractal = signals.lastLowerFractal;
+
+  const openBuyContracts = Array.from(deriv.openContracts.values())
+    .filter(c => c.contract_type === 'CALL');
+  const openSellContracts = Array.from(deriv.openContracts.values())
+    .filter(c => c.contract_type === 'PUT');
+
+  if (signals.buySignal && openBuyContracts.length < 5) {
+    if (lastProposal?.contract_type === 'CALL') {
+      console.log('[🟢] Executing BUY contract at breakout');
+      deriv.buyContract(lastProposal.id, lastProposal.ask_price);
+      lastProposal = null;
+    } else {
+      console.log('[📨] Requesting new BUY proposal');
+      deriv.requestTradeProposal('CALL', 10, 5);
+    }
+  }
+
+  if (signals.sellSignal && openSellContracts.length < 5) {
+    if (lastProposal?.contract_type === 'PUT') {
+      console.log('[🔴] Executing SELL contract at breakdown');
+      deriv.buyContract(lastProposal.id, lastProposal.ask_price);
+      lastProposal = null;
+    } else {
+      console.log('[📨] Requesting new SELL proposal');
+      deriv.requestTradeProposal('PUT', 10, 5);
+    }
+  }
+
+  if (latest.close < signals.lowestLow && openBuyContracts.length > 0) {
+    console.log('[🚨] STOPLOSS BUY: Closing all BUYs');
+    for (const c of openBuyContracts) {
+      deriv.buyContract(c.contract_id, 0);
+    }
+  }
+
+  if (latest.close > signals.highestHigh && openSellContracts.length > 0) {
+    console.log('[🚨] STOPLOSS SELL: Closing all SELLs');
+    for (const c of openSellContracts) {
+      deriv.buyContract(c.contract_id, 0);
+    }
+  }
+
+  const allBuyProfitable = openBuyContracts.length > 0 &&
+    openBuyContracts.every(c => c.profit > 0 && latest.close > signals.lastLowerFractal);
+
+  if (allBuyProfitable) {
+    console.log('[💰] PROFIT: Closing all BUYs in profit');
+    for (const c of openBuyContracts) {
+      deriv.buyContract(c.contract_id, 0);
+    }
+  }
+
+  const allSellProfitable = openSellContracts.length > 0 &&
+    openSellContracts.every(c => c.profit > 0 && latest.close < signals.lastUpperFractal);
+
+  if (allSellProfitable) {
+    console.log('[💰] PROFIT: Closing all SELLs in profit');
+    for (const c of openSellContracts) {
+      deriv.buyContract(c.contract_id, 0);
+    }
+  }
+}
+
 server.listen(PORT, () => {
   console.log(`[✅] PurpleBot backend running on http://localhost:${PORT}`);
 });
