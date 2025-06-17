@@ -1,15 +1,13 @@
-// deriv.js (Optimized with Libraries)
-// Libraries used:
-// - deriv-api: Official Deriv WebSocket SDK (https://github.com/binary-com/deriv-api)
-// - ws: WebSocket client (required by deriv-api)
-// - dotenv: To load .env variables
-const { DerivAPI } = require('@deriv/deriv-api');
+// deriv.js with retry and resilience
+const DerivAPIBasic = require('@deriv/deriv-api/dist/DerivAPIBasic');
 const WebSocket = require('ws');
 require('dotenv').config();
 
 const DEFAULT_SYMBOL = 'R_100';
 const DEFAULT_GRANULARITY = 60;
 const DEFAULT_COUNT = 100;
+const MAX_RETRIES = 5;
+const RETRY_DELAY = 3000;
 
 const API_TOKEN = process.env.DERIV_API_TOKEN;
 let SYMBOL = process.env.SYMBOL || DEFAULT_SYMBOL;
@@ -26,13 +24,17 @@ let onInvalidSymbol = null;
 
 let connection = null;
 let api = null;
+let retries = 0;
+let isConnecting = false;
 
 function createConnection() {
   connection = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=1089');
-  api = new DerivAPI({ connection });
+  api = new DerivAPIBasic({ connection });
 }
 
 async function connect() {
+  if (isConnecting) return;
+  isConnecting = true;
   try {
     createConnection();
     await api.account.authorize(API_TOKEN);
@@ -43,8 +45,19 @@ async function connect() {
     await fetchInitialCandles();
     streamCandleUpdates();
     streamBalance();
+
+    retries = 0;
   } catch (err) {
-    console.error('[❌] Connection error:', err.message);
+    console.error(`[❌] Connection error: ${err.message}`);
+    retries++;
+    if (retries <= MAX_RETRIES) {
+      console.log(`[🔁] Retrying to connect in ${RETRY_DELAY / 1000}s... (${retries}/${MAX_RETRIES})`);
+      setTimeout(connect, RETRY_DELAY);
+    } else {
+      console.error('[🛑] Max retries reached. Could not connect to Deriv API.');
+    }
+  } finally {
+    isConnecting = false;
   }
 }
 
@@ -75,6 +88,9 @@ async function streamCandleUpdates() {
     candles.push(candle);
     if (candles.length > COUNT) candles.shift();
   });
+  stream.onError((err) => {
+    console.error('[⚠️] Candle stream error:', err.message);
+  });
 }
 
 async function streamBalance() {
@@ -82,6 +98,9 @@ async function streamBalance() {
   stream.onUpdate((balance) => {
     accountBalance = balance.balance;
     console.log(`[💰] Balance: $${accountBalance.toFixed(2)}`);
+  });
+  stream.onError((err) => {
+    console.error('[⚠️] Balance stream error:', err.message);
   });
 }
 
@@ -117,10 +136,18 @@ async function trackContract(contractId) {
       console.log('[📗] Contract updated:', contract.contract_id);
     }
   });
+  stream.onError((err) => {
+    console.error(`[⚠️] Contract stream error: ${err.message}`);
+  });
 }
 
 async function disconnect() {
-  if (api) await api.disconnect();
+  try {
+    if (api) await api.disconnect();
+    console.log('[🔌] Disconnected from Deriv WebSocket');
+  } catch (e) {
+    console.error('[⚠️] Error on disconnect:', e.message);
+  }
 }
 
 async function reconnectWithNewSymbol(newSymbol) {
