@@ -8,12 +8,14 @@
   <link href="https://cdn.jsdelivr.net/npm/@material/web@1.0.0/material.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
+    * {
+      box-sizing: border-box;
+    }
     body {
       font-family: 'Roboto', sans-serif;
       margin: 0;
-      background: #121212;
-      color: #fff;
-      overflow: hidden;
+      background: #0e0e0e;
+      color: #e0e0e0;
     }
     header {
       padding: 1rem;
@@ -21,67 +23,91 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      animation: slideInDown 1s ease-out;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
     }
     .container {
-      display: flex;
-      height: calc(100vh - 120px);
-      animation: fadeIn 1.5s;
+      display: grid;
+      grid-template-columns: 250px 1fr;
+      height: calc(100vh - 80px);
     }
     .sidebar {
-      width: 250px;
       background: #1f1f1f;
       padding: 1rem;
       border-right: 2px solid #444;
       overflow-y: auto;
     }
     .main {
-      flex: 1;
       padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
     }
     canvas {
       background-color: #1a1a1a;
       border-radius: 10px;
+      max-height: 60vh;
     }
-    .bottom-controls {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
+    .controls {
       display: flex;
+      justify-content: center;
       gap: 1rem;
-      animation: slideInUp 1s ease-out;
+      margin-top: auto;
     }
     .indicator-value {
       margin-bottom: 1rem;
+      font-size: 1rem;
     }
-    @keyframes slideInDown {
-      from { transform: translateY(-100%); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-    @keyframes slideInUp {
-      from { transform: translateY(100%); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    input[type="text"] {
+    select, input[type="text"] {
       padding: 0.5rem;
-      width: 200px;
-      border: none;
       border-radius: 4px;
+      border: none;
+      width: 200px;
+      margin-right: 0.5rem;
+    }
+    button {
+      padding: 0.6rem 1rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .start-btn {
+      background-color: #28a745;
+      color: white;
+    }
+    .start-btn:hover {
+      background-color: #218838;
+    }
+    .stop-btn {
+      background-color: #dc3545;
+      color: white;
+    }
+    .stop-btn:hover {
+      background-color: #c82333;
+    }
+    #symbolError {
+      color: #ff4e4e;
+      font-size: 0.85rem;
+    }
+    #statusIndicator {
+      font-weight: bold;
+      padding-left: 1rem;
     }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <input type="text" id="symbolInput" placeholder="Enter Symbol...">
-      <span id="symbolError" style="color: red; display: none;">Invalid symbol. Try: <span id="suggestions"></span></span>
+      <select id="symbolDropdown"></select>
+      <span id="symbolError" style="display: none;">Invalid symbol</span>
     </div>
-    <div id="accountBalance">Balance: $0.00</div>
+    <div>
+      <span id="accountBalance">Balance: $0.00</span>
+      <span id="statusIndicator">[Stopped]</span>
+    </div>
   </header>
 
   <div class="container">
@@ -91,14 +117,14 @@
       <div class="indicator-value">RSI(7): <span id="rsi7">--</span></div>
       <div class="indicator-value">Fractals: <span id="fractals">--</span></div>
     </aside>
+
     <main class="main">
       <canvas id="chartCanvas"></canvas>
+      <div class="controls">
+        <button onclick="startBot()" class="start-btn" id="startBtn">Start Bot</button>
+        <button onclick="stopBot()" class="stop-btn" id="stopBtn">Stop Bot</button>
+      </div>
     </main>
-  </div>
-
-  <div class="bottom-controls">
-    <button onclick="startBot()" class="md-outlined-button">Start Bot</button>
-    <button onclick="stopBot()" class="md-outlined-button">Stop Bot</button>
   </div>
 
   <script>
@@ -106,7 +132,47 @@
     let chart = new Chart(ctx, {
       type: 'line',
       data: { labels: [], datasets: [] },
-      options: { responsive: true, maintainAspectRatio: false }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { display: true },
+          y: { display: true }
+        },
+        plugins: {
+          legend: { labels: { color: 'white' } }
+        }
+      }
+    });
+
+    let isBotRunning = false;
+
+    async function fetchSymbolList() {
+      const res = await fetch('/symbol-info');
+      const data = await res.json();
+      const dropdown = document.getElementById('symbolDropdown');
+      dropdown.innerHTML = '';
+      data.symbolDetails.forEach(symbol => {
+        const option = document.createElement('option');
+        option.value = symbol.symbol;
+        option.textContent = symbol.display_name;
+        if (symbol.symbol === data.currentSymbol) option.selected = true;
+        dropdown.appendChild(option);
+      });
+    }
+
+    async function setSymbol(symbol) {
+      const res = await fetch('/set-symbol', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol })
+      });
+      const err = document.getElementById('symbolError');
+      err.style.display = res.ok ? 'none' : 'inline';
+    }
+
+    document.getElementById('symbolDropdown').addEventListener('change', (e) => {
+      setSymbol(e.target.value);
     });
 
     async function fetchData() {
@@ -121,16 +187,15 @@
       const prices = data.candles.map(c => parseFloat(c.close));
 
       const trades = [...data.activeTrades, ...data.closedTrades];
-      const tradeMarkers = trades.map(t => {
-        return {
-          label: t.contract_type + ' ' + t.contract_id,
-          data: [{x: new Date(t.entry_tick_time * 1000).toLocaleTimeString(), y: t.entry_tick}],
-          borderColor: t.contract_type === 'CALL' ? 'green' : 'red',
-          borderWidth: 2,
-          pointRadius: 5,
-          type: 'scatter'
-        };
-      });
+      const tradeMarkers = trades.map(t => ({
+        label: t.contract_type + ' ' + t.contract_id,
+        data: [{ x: new Date(t.entry_tick_time * 1000).toLocaleTimeString(), y: t.entry_tick }],
+        borderColor: t.contract_type === 'CALL' ? 'lime' : 'red',
+        borderWidth: 2,
+        pointRadius: 4,
+        type: 'scatter',
+        showLine: false
+      }));
 
       chart.data = {
         labels,
@@ -139,7 +204,8 @@
             label: 'Price',
             data: prices,
             borderColor: '#6a00f4',
-            fill: false
+            backgroundColor: 'rgba(106, 0, 244, 0.1)',
+            fill: true
           },
           ...tradeMarkers
         ]
@@ -155,35 +221,24 @@
       }
     }
 
-    async function validateSymbolInput() {
-      const symbol = document.getElementById('symbolInput').value.trim();
-      const res = await fetch('/set-symbol', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol })
-      });
-      const data = await res.json();
-      const errorEl = document.getElementById('symbolError');
-      if (res.status !== 200) {
-        errorEl.style.display = 'inline';
-        document.getElementById('suggestions').textContent = data.availableSymbols.join(', ');
-      } else {
-        errorEl.style.display = 'none';
-      }
+    function updateStatus(running) {
+      isBotRunning = running;
+      document.getElementById('statusIndicator').textContent = running ? '[Running]' : '[Stopped]';
     }
 
-    function startBot() {
-      fetch('/trade-start', { method: 'POST' });
+    async function startBot() {
+      const res = await fetch('/trade-start', { method: 'POST' });
+      if (res.ok) updateStatus(true);
     }
 
-    function stopBot() {
-      fetch('/trade-end', { method: 'POST' });
+    async function stopBot() {
+      const res = await fetch('/trade-end', { method: 'POST' });
+      if (res.ok) updateStatus(false);
     }
-
-    document.getElementById('symbolInput').addEventListener('change', validateSymbolInput);
 
     setInterval(fetchData, 5000);
     setInterval(fetchBalance, 10000);
+    fetchSymbolList();
     fetchData();
     fetchBalance();
   </script>
