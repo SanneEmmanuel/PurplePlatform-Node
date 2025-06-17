@@ -1,4 +1,9 @@
-// deriv-api-wrapper.js
+// deriv.js (Optimized with Libraries)
+// Libraries used:
+// - deriv-api: Official Deriv WebSocket SDK (https://github.com/binary-com/deriv-api)
+// - ws: WebSocket client (required by deriv-api)
+// - dotenv: To load .env variables
+
 const { DerivAPI } = require('deriv-api');
 const WebSocket = require('ws');
 require('dotenv').config();
@@ -6,8 +11,8 @@ require('dotenv').config();
 const DEFAULT_SYMBOL = 'R_100';
 const DEFAULT_GRANULARITY = 60;
 const DEFAULT_COUNT = 100;
-const API_TOKEN = process.env.DERIV_API_TOKEN;
 
+const API_TOKEN = process.env.DERIV_API_TOKEN;
 let SYMBOL = process.env.SYMBOL || DEFAULT_SYMBOL;
 const GRANULARITY = parseInt(process.env.GRANULARITY) || DEFAULT_GRANULARITY;
 const COUNT = parseInt(process.env.CANDLE_COUNT) || DEFAULT_COUNT;
@@ -16,6 +21,7 @@ let candles = [];
 const openContracts = new Map();
 const closedContracts = new Map();
 let availableSymbols = [];
+let symbolDetails = [];
 let accountBalance = null;
 let onInvalidSymbol = null;
 
@@ -23,14 +29,13 @@ let connection = null;
 let api = null;
 
 function createConnection() {
-  connection = new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=1089`);
+  connection = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=1089');
   api = new DerivAPI({ connection });
 }
 
 async function connect() {
-  createConnection();
-
   try {
+    createConnection();
     await api.account.authorize(API_TOKEN);
     console.log('[✅] Authorized:', (await api.account.getAccount()).loginid);
 
@@ -46,7 +51,9 @@ async function connect() {
 
 async function loadSymbols() {
   const res = await api.basic.activeSymbols({ brief: true });
+  symbolDetails = res;
   availableSymbols = res.map(s => s.symbol);
+  console.log('[📃] Available Symbols:', symbolDetails.map(s => `${s.symbol} - ${s.display_name}`).join(', '));
 }
 
 function validateSymbol() {
@@ -60,8 +67,7 @@ function validateSymbol() {
 }
 
 async function fetchInitialCandles() {
-  const data = await api.ticks.candles({ symbol: SYMBOL, granularity: GRANULARITY, count: COUNT });
-  candles = [...data];
+  candles = await api.ticks.candles({ symbol: SYMBOL, granularity: GRANULARITY, count: COUNT });
 }
 
 async function streamCandleUpdates() {
@@ -146,6 +152,7 @@ module.exports = {
   buyContract,
   getAccountBalance: () => accountBalance,
   getAvailableSymbols: () => availableSymbols,
+  getSymbolDetails: () => symbolDetails,
   getCurrentSymbol: () => SYMBOL,
   setOnInvalidSymbol: (cb) => (onInvalidSymbol = cb),
   reconnectWithNewSymbol,
