@@ -1,4 +1,4 @@
-// deriv.js with connection fix, waitUntil, retry, and resilience
+// deriv.js without waitUntil, simplified and more resilient
 const DerivAPIBasic = require('@deriv/deriv-api/dist/DerivAPIBasic');
 const WebSocket = require('ws');
 require('dotenv').config();
@@ -32,18 +32,6 @@ function createConnection() {
   api = new DerivAPIBasic({ connection });
 }
 
-function waitUntil(conditionFn, timeout = 5000, interval = 100) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const check = () => {
-      if (conditionFn()) return resolve();
-      if (Date.now() - start > timeout) return reject(new Error('Timeout waiting for API to be ready'));
-      setTimeout(check, interval);
-    };
-    check();
-  });
-}
-
 async function connect() {
   if (isConnecting) return;
   isConnecting = true;
@@ -54,8 +42,6 @@ async function connect() {
       connection.on('open', resolve);
       connection.on('error', reject);
     });
-
-    await waitUntil(() => api.account && typeof api.account.authorize === 'function', 5000);
 
     await api.account.authorize(API_TOKEN);
     console.log('[✅] Authorized:', (await api.account.getAccount()).loginid);
@@ -99,7 +85,11 @@ function validateSymbol() {
 }
 
 async function fetchInitialCandles() {
-  candles = await api.ticks.candles({ symbol: SYMBOL, granularity: GRANULARITY, count: COUNT });
+  try {
+    candles = await api.ticks.candles({ symbol: SYMBOL, granularity: GRANULARITY, count: COUNT });
+  } catch (err) {
+    console.error('[⚠️] Failed to fetch initial candles:', err.message);
+  }
 }
 
 async function streamCandleUpdates() {
