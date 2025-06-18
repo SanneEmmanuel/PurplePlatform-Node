@@ -1,4 +1,4 @@
-// === deriv.js (updated with account info) ===
+// === deriv.js (enhanced with logging, validation, and runtime resilience) ===
 const WebSocket = require('ws');
 require('dotenv').config();
 
@@ -11,12 +11,22 @@ const RETRY_DELAY = 3000;
 const GRANULARITY = parseInt(process.env.GRANULARITY) || DEFAULT_GRANULARITY;
 const COUNT = parseInt(process.env.CANDLE_COUNT) || DEFAULT_COUNT;
 
+let runtimeConfig = {
+  SYMBOL: process.env.SYMBOL || DEFAULT_SYMBOL,
+  API_TOKEN: process.env.DERIV_API_TOKEN || ''
+};
+
+function setRuntimeConfig(key, value) {
+  console.log(`[⚙️] Setting ${key} = ${value}`);
+  runtimeConfig[key] = value;
+}
+
 function getSymbol() {
-  return process.env.SYMBOL || DEFAULT_SYMBOL;
+  return runtimeConfig.SYMBOL;
 }
 
 function getToken() {
-  return process.env.DERIV_API_TOKEN;
+  return runtimeConfig.API_TOKEN;
 }
 
 let candles = [];
@@ -127,7 +137,9 @@ function handleMessage(message) {
 
 function authorize() {
   return new Promise((resolve, reject) => {
-    send({ authorize: getToken() }, (data) => {
+    const token = getToken();
+    if (!token) return reject(new Error('Missing API token'));
+    send({ authorize: token }, (data) => {
       if (data.error) reject(new Error(data.error.message));
       else resolve(data);
     });
@@ -141,13 +153,14 @@ function loadSymbols() {
 }
 
 function validateSymbol() {
-  if (!availableSymbols.includes(getSymbol())) {
-    console.error(`[❌] SYMBOL '${getSymbol()}' is invalid.`);
+  const symbol = getSymbol();
+  if (!availableSymbols.includes(symbol)) {
+    console.error(`[❌] SYMBOL '${symbol}' is invalid.`);
     if (typeof onInvalidSymbol === 'function') onInvalidSymbol(availableSymbols);
     disconnect();
     return;
   }
-  console.log(`[✅] SYMBOL '${getSymbol()}' is valid.`);
+  console.log(`[✅] SYMBOL '${symbol}' is valid.`);
 }
 
 function fetchInitialCandles() {
@@ -193,12 +206,14 @@ function disconnect() {
   console.log('[🔌] Disconnected from Deriv WebSocket');
 }
 
-async function reconnectWithNewSymbol(_) {
+async function reconnectWithNewSymbol(symbol) {
+  setRuntimeConfig('SYMBOL', symbol);
   await disconnect();
   connect();
 }
 
-async function reconnectWithNewToken(_) {
+async function reconnectWithNewToken(token) {
+  setRuntimeConfig('API_TOKEN', token);
   await disconnect();
   connect();
 }
