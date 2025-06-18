@@ -3,49 +3,47 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PurpleBot Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="dashboard.css">
+  <title>PurpleBot Trading Dashboard</title>
+  <link rel="stylesheet" href="/styles/dashboard.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <header>
+  <header class="header">
     <div class="left-header">
+      <button class="menu-toggle" onclick="toggleSidebar()">
+        &#9776;
+      </button>
       <select id="symbolDropdown"></select>
-      <span id="symbolError" style="display: none;">Invalid symbol</span>
+      <span id="symbolError" class="error-msg">Invalid symbol</span>
     </div>
     <div class="right-header">
-      <div class="profile-menu">
-        <div id="menuToggle">☰</div>
-        <div class="dropdown" id="profileDropdown">
-          <div id="accountDetails">Account: --</div>
-          <div id="accountBalance">Balance: $0.00</div>
-          <div id="indicatorSummary">
-            <strong>Indicators:</strong><br>
-            EMA(20): <span id="ema20">--</span><br>
-            RSI(7): <span id="rsi7">--</span><br>
-            Fractals: <span id="fractals">--</span>
-          </div>
+      <div class="account-summary">
+        <div id="accountDetails" class="account-text">Account: --</div>
+        <div class="balance-status">
+          <span id="accountBalance">Balance: $0.00</span>
+          <span id="statusIndicator">[Stopped]</span>
         </div>
       </div>
-      <span id="statusIndicator">[Stopped]</span>
     </div>
   </header>
 
-  <div class="container">
-    <aside class="sidebar">
-      <h3>Indicators</h3>
-      <div class="indicator-value">EMA(20): <span id="ema20_sidebar">--</span></div>
-      <div class="indicator-value">RSI(7): <span id="rsi7_sidebar">--</span></div>
-      <div class="indicator-value">Fractals: <span id="fractals_sidebar">--</span></div>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section">
+        <h3>Indicators</h3>
+        <div class="indicator">EMA(20): <span id="ema20">--</span></div>
+        <div class="indicator">RSI(7): <span id="rsi7">--</span></div>
+        <div class="indicator">Fractals: <span id="fractals">--</span></div>
+      </div>
+      <div class="sidebar-section">
+        <h3>Options</h3>
+        <button onclick="startBot()" class="btn start-btn" id="startBtn">Start Bot</button>
+        <button onclick="stopBot()" class="btn stop-btn" id="stopBtn">Stop Bot</button>
+      </div>
     </aside>
 
     <main class="main">
       <canvas id="chartCanvas"></canvas>
-      <div class="controls">
-        <button onclick="startBot()" class="start-btn" id="startBtn">Start Bot</button>
-        <button onclick="stopBot()" class="stop-btn" id="stopBtn">Stop Bot</button>
-      </div>
     </main>
   </div>
 
@@ -57,8 +55,13 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        scales: { x: { display: true }, y: { display: true } },
-        plugins: { legend: { labels: { color: 'white' } } }
+        scales: {
+          x: { display: true },
+          y: { display: true }
+        },
+        plugins: {
+          legend: { labels: { color: 'white' } }
+        }
       }
     });
 
@@ -87,25 +90,15 @@
       document.getElementById('symbolError').style.display = res.ok ? 'none' : 'inline';
     }
 
-    document.getElementById('symbolDropdown').addEventListener('change', (e) => {
-      setSymbol(e.target.value);
-    });
+    document.getElementById('symbolDropdown').addEventListener('change', (e) => setSymbol(e.target.value));
 
     async function fetchData() {
       const res = await fetch('/api/chart-data');
       const data = await res.json();
 
-      const ema = data.indicators.ema20?.at(-1)?.toFixed(2) || '--';
-      const rsi = data.indicators.rsi7?.at(-1)?.toFixed(2) || '--';
-      const fractals = `${data.indicators.fractalHighs?.length || 0} / ${data.indicators.fractalLows?.length || 0}`;
-
-      document.getElementById('ema20').textContent = ema;
-      document.getElementById('rsi7').textContent = rsi;
-      document.getElementById('fractals').textContent = fractals;
-
-      document.getElementById('ema20_sidebar').textContent = ema;
-      document.getElementById('rsi7_sidebar').textContent = rsi;
-      document.getElementById('fractals_sidebar').textContent = fractals;
+      document.getElementById('ema20').textContent = data.indicators.ema20?.at(-1)?.toFixed(2) || '--';
+      document.getElementById('rsi7').textContent = data.indicators.rsi7?.at(-1)?.toFixed(2) || '--';
+      document.getElementById('fractals').textContent = `${data.indicators.fractalHighs?.length || 0} / ${data.indicators.fractalLows?.length || 0}`;
 
       const labels = data.candles.map(c => new Date(c.epoch * 1000).toLocaleTimeString());
       const prices = data.candles.map(c => parseFloat(c.close));
@@ -169,9 +162,9 @@
       if (res.ok) updateStatus(false);
     }
 
-    document.getElementById('menuToggle').addEventListener('click', () => {
-      document.getElementById('profileDropdown').classList.toggle('open');
-    });
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('collapsed');
+    }
 
     setInterval(fetchData, 5000);
     setInterval(fetchBalance, 10000);
