@@ -1,4 +1,4 @@
-// === deriv.js (updated) ===
+// === deriv.js (updated with account info) ===
 const WebSocket = require('ws');
 require('dotenv').config();
 
@@ -26,6 +26,7 @@ let availableSymbols = [];
 let symbolDetails = [];
 let accountBalance = null;
 let onInvalidSymbol = null;
+let accountInfo = {};
 
 let connection = null;
 let retries = 0;
@@ -85,7 +86,17 @@ function handleMessage(message) {
     callbacks.delete(data.req_id);
     cb(data);
   }
-  if (data.msg_type === 'balance') {
+  if (data.msg_type === 'authorize') {
+    const auth = data.authorize;
+    accountInfo = {
+      loginid: auth.loginid,
+      currency: auth.currency,
+      is_virtual: auth.is_virtual,
+      email: auth.email,
+      fullname: auth.fullname || ''
+    };
+    console.log(`[👤] Logged in as ${auth.loginid} (${auth.is_virtual ? 'Demo' : 'Real'})`);
+  } else if (data.msg_type === 'balance') {
     accountBalance = data.balance.balance;
     console.log(`[💰] Balance: $${accountBalance.toFixed(2)}`);
   } else if (data.msg_type === 'candles') {
@@ -210,6 +221,7 @@ module.exports = {
   getAvailableSymbols: () => availableSymbols,
   getSymbolDetails: () => symbolDetails,
   getCurrentSymbol: getSymbol,
+  getAccountInfo: () => accountInfo,
   setOnInvalidSymbol: (cb) => (onInvalidSymbol = cb),
   reconnectWithNewSymbol,
   reconnectWithNewToken
