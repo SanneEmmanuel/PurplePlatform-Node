@@ -1,5 +1,4 @@
-// indicators.js (Safe & Patched)
-
+// indicators.js (Safe & Synced with main.js)
 function calculateEMA(candles, period) {
   if (!Array.isArray(candles) || candles.length < period) return [];
 
@@ -60,34 +59,37 @@ function calculateRSI(candles, period) {
 }
 
 function calculateBillWilliamsFractals(candles) {
-  if (!Array.isArray(candles) || candles.length < 5) return { fractalHighs: [], fractalLows: [] };
+  if (!Array.isArray(candles) || candles.length < 5) {
+    return { upper: [], lower: [] };
+  }
 
-  const fractalHighs = new Array(candles.length).fill(false);
-  const fractalLows = new Array(candles.length).fill(false);
+  const upper = new Array(candles.length).fill(null);
+  const lower = new Array(candles.length).fill(null);
 
   for (let i = 2; i < candles.length - 2; i++) {
-    const high = candles[i].high;
+    const high = candles[i]?.high;
+    const low = candles[i]?.low;
+
     if (
-      high > candles[i - 1].high &&
-      high > candles[i - 2].high &&
-      high > candles[i + 1].high &&
-      high > candles[i + 2].high
+      high > candles[i - 1]?.high &&
+      high > candles[i - 2]?.high &&
+      high > candles[i + 1]?.high &&
+      high > candles[i + 2]?.high
     ) {
-      fractalHighs[i] = true;
+      upper[i] = high;
     }
 
-    const low = candles[i].low;
     if (
-      low < candles[i - 1].low &&
-      low < candles[i - 2].low &&
-      low < candles[i + 1].low &&
-      low < candles[i + 2].low
+      low < candles[i - 1]?.low &&
+      low < candles[i - 2]?.low &&
+      low < candles[i + 1]?.low &&
+      low < candles[i + 2]?.low
     ) {
-      fractalLows[i] = true;
+      lower[i] = low;
     }
   }
 
-  return { fractalHighs, fractalLows };
+  return { upper, lower };
 }
 
 module.exports = {
