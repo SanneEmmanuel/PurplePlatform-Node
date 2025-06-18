@@ -1,6 +1,5 @@
-// main.js
-// PurpleBot by Dr Sanne Karibo
-
+// === main.js (updated) ===
+//PurpleBot by Sanne Karibo
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
@@ -27,7 +26,6 @@ let tradingInterval = null;
 let lastProposal = null;
 const TRADE_INTERVAL_MS = 10 * 1000;
 
-// === WebSocket Broadcast ===
 wss.on('connection', (socket) => {
   console.log('[🌐] WebSocket client connected');
 
@@ -61,8 +59,6 @@ wss.on('connection', (socket) => {
   socket.on('close', () => clearInterval(interval));
 });
 
-// === API Routes ===
-
 app.post('/trade-start', (req, res) => {
   if (tradingInterval) return res.status(409).json({ error: 'Already running' });
   console.log('[🚀] Starting bot...');
@@ -91,14 +87,6 @@ app.post('/set-symbol', async (req, res) => {
   res.json({ message: 'Symbol updated' });
 });
 
-app.get('/symbol-info', (req, res) => {
-  res.json({
-    currentSymbol: deriv.getCurrentSymbol(),
-    availableSymbols: deriv.getAvailableSymbols(),
-    symbolDetails: deriv.getSymbolDetails()
-  });
-});
-
 app.post('/set-api-token', async (req, res) => {
   const { token } = req.body;
   if (!token) return res.status(400).json({ error: 'Missing API token' });
@@ -114,6 +102,14 @@ app.post('/set-api-token', async (req, res) => {
   }
 });
 
+app.get('/symbol-info', (req, res) => {
+  res.json({
+    currentSymbol: deriv.getCurrentSymbol(),
+    availableSymbols: deriv.getAvailableSymbols(),
+    symbolDetails: deriv.getSymbolDetails()
+  });
+});
+
 app.get('/api/balance', (req, res) => {
   try {
     deriv.requestBalance?.();
@@ -125,11 +121,11 @@ app.get('/api/balance', (req, res) => {
   }
 });
 
-app.get('/api/chart-data', (req, res) => {
+app.get('/api/chart-data', async (req, res) => {
   const candles = deriv.candles;
-  const ema20 = indicators.calculateEMA(candles, 20);
-  const rsi7 = indicators.calculateRSI(candles, 7);
-  const fractals = indicators.calculateBillWilliamsFractals(candles);
+  const ema20 = await indicators.calculateEMA(candles, 20);
+  const rsi7 = await indicators.calculateRSI(candles, 7);
+  const fractals = await indicators.calculateBillWilliamsFractals(candles);
 
   const indicatorResults = {
     ema20,
@@ -153,6 +149,7 @@ async function updateEnvVariable(key, value) {
     const updated = lines.map(line => (line.startsWith(key + '=') ? `${key}=${value}` : line));
     if (!lines.some(line => line.startsWith(key + '='))) updated.push(`${key}=${value}`);
     await fs.writeFile(envPath, updated.join('\n'));
+    process.env[key] = value; // ✅ Update runtime env
   } catch (err) {
     console.error(`[❌] Failed to update ${key}:`, err.message);
     throw err;
