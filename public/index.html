@@ -190,6 +190,41 @@
       margin-top: 15px;
       font-size: 14px;
     }
+
+    .modal {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      display: none;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      max-width: 400px;
+      text-align: center;
+      animation: fadeIn 0.4s ease-out;
+    }
+
+    .modal-content h2 {
+      margin-bottom: 15px;
+    }
+
+    .modal-content p {
+      margin-bottom: 20px;
+    }
+
+    .modal-content button {
+      width: auto;
+      margin: 0 10px;
+      padding: 10px 20px;
+    }
   </style>
 </head>
 <body>
@@ -213,7 +248,29 @@
     </form>
   </div>
 
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <h2>Account Connected</h2>
+      <p id="modalText"></p>
+      <button onclick="proceedToDashboard()">Proceed</button>
+      <button onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+
   <script>
+    function showModal(text) {
+      document.getElementById('modalText').textContent = text;
+      document.getElementById('modal').style.display = 'flex';
+    }
+
+    function closeModal() {
+      document.getElementById('modal').style.display = 'none';
+    }
+
+    function proceedToDashboard() {
+      window.location.href = '/dashboard.html';
+    }
+
     document.getElementById('apiForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const apiKey = document.getElementById('apiKey').value;
@@ -233,8 +290,9 @@
         const data = await res.json();
         if (res.ok) {
           localStorage.setItem('purplebot_api_token', apiKey);
-          successEl.textContent = data.message || 'Success! Redirecting...';
-          setTimeout(() => window.location.href = '/dashboard.html', 1200);
+          const accountRes = await fetch('/api/account-info');
+          const account = await accountRes.json();
+          showModal(`Login ID: ${account.loginid}\nEmail: ${account.email}\nCurrency: ${account.currency}\nAccount Type: ${account.is_virtual ? 'Demo' : 'Real'}`);
         } else {
           errorEl.textContent = data.error || 'Invalid token';
           btn.disabled = false;
@@ -251,13 +309,15 @@
       const savedToken = localStorage.getItem('purplebot_api_token');
       if (!savedToken) return;
       try {
-        const res = await fetch('/set-api-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: savedToken })
-        });
-        if (res.ok) window.location.href = '/dashboard.html';
-        else localStorage.removeItem('purplebot_api_token');
+        const statusRes = await fetch('/api/token-status');
+        const { connected } = await statusRes.json();
+        if (connected) {
+          const accountRes = await fetch('/api/account-info');
+          const account = await accountRes.json();
+          showModal(`API already connected to: ${account.loginid}\nEmail: ${account.email}\nCurrency: ${account.currency}\nType: ${account.is_virtual ? 'Demo' : 'Real'}`);
+        } else {
+          localStorage.removeItem('purplebot_api_token');
+        }
       } catch {
         localStorage.removeItem('purplebot_api_token');
       }
