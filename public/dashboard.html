@@ -5,120 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PurpleBot Dashboard</title>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/@material/web@1.0.0/material.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="dashboard.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      font-family: 'Roboto', sans-serif;
-      margin: 0;
-      background: #0e0e0e;
-      color: #e0e0e0;
-    }
-    header {
-      padding: 1rem;
-      background: linear-gradient(90deg, #6a00f4, #9b00ff);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-    }
-    .container {
-      display: grid;
-      grid-template-columns: 250px 1fr;
-      height: calc(100vh - 80px);
-    }
-    .sidebar {
-      background: #1f1f1f;
-      padding: 1rem;
-      border-right: 2px solid #444;
-      overflow-y: auto;
-    }
-    .main {
-      padding: 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-    canvas {
-      background-color: #1a1a1a;
-      border-radius: 10px;
-      max-height: 60vh;
-    }
-    .controls {
-      display: flex;
-      justify-content: center;
-      gap: 1rem;
-      margin-top: auto;
-    }
-    .indicator-value {
-      margin-bottom: 1rem;
-      font-size: 1rem;
-    }
-    select, input[type="text"] {
-      padding: 0.5rem;
-      border-radius: 4px;
-      border: none;
-      width: 200px;
-      margin-right: 0.5rem;
-    }
-    button {
-      padding: 0.6rem 1rem;
-      font-weight: bold;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background 0.3s;
-    }
-    .start-btn {
-      background-color: #28a745;
-      color: white;
-    }
-    .start-btn.running {
-      background-color: #ffc107;
-      color: #000;
-    }
-    .stop-btn {
-      background-color: #dc3545;
-      color: white;
-    }
-    .stop-btn.stopped {
-      background-color: #6c757d;
-    }
-    #symbolError {
-      color: #ff4e4e;
-      font-size: 0.85rem;
-    }
-    #statusIndicator {
-      font-weight: bold;
-      padding-left: 1rem;
-    }
-    .account-info {
-      font-size: 0.9rem;
-      text-align: right;
-    }
-  </style>
 </head>
 <body>
   <header>
-    <div>
+    <div class="left-header">
       <select id="symbolDropdown"></select>
       <span id="symbolError" style="display: none;">Invalid symbol</span>
     </div>
-    <div class="account-info">
-      <div id="accountDetails">Account: --</div>
-      <div><span id="accountBalance">Balance: $0.00</span> <span id="statusIndicator">[Stopped]</span></div>
+    <div class="right-header">
+      <div class="profile-menu">
+        <div id="menuToggle">☰</div>
+        <div class="dropdown" id="profileDropdown">
+          <div id="accountDetails">Account: --</div>
+          <div id="accountBalance">Balance: $0.00</div>
+          <div id="indicatorSummary">
+            <strong>Indicators:</strong><br>
+            EMA(20): <span id="ema20">--</span><br>
+            RSI(7): <span id="rsi7">--</span><br>
+            Fractals: <span id="fractals">--</span>
+          </div>
+        </div>
+      </div>
+      <span id="statusIndicator">[Stopped]</span>
     </div>
   </header>
 
   <div class="container">
     <aside class="sidebar">
       <h3>Indicators</h3>
-      <div class="indicator-value">EMA(20): <span id="ema20">--</span></div>
-      <div class="indicator-value">RSI(7): <span id="rsi7">--</span></div>
-      <div class="indicator-value">Fractals: <span id="fractals">--</span></div>
+      <div class="indicator-value">EMA(20): <span id="ema20_sidebar">--</span></div>
+      <div class="indicator-value">RSI(7): <span id="rsi7_sidebar">--</span></div>
+      <div class="indicator-value">Fractals: <span id="fractals_sidebar">--</span></div>
     </aside>
 
     <main class="main">
@@ -138,13 +57,8 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        scales: {
-          x: { display: true },
-          y: { display: true }
-        },
-        plugins: {
-          legend: { labels: { color: 'white' } }
-        }
+        scales: { x: { display: true }, y: { display: true } },
+        plugins: { legend: { labels: { color: 'white' } } }
       }
     });
 
@@ -170,8 +84,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol })
       });
-      const err = document.getElementById('symbolError');
-      err.style.display = res.ok ? 'none' : 'inline';
+      document.getElementById('symbolError').style.display = res.ok ? 'none' : 'inline';
     }
 
     document.getElementById('symbolDropdown').addEventListener('change', (e) => {
@@ -182,9 +95,17 @@
       const res = await fetch('/api/chart-data');
       const data = await res.json();
 
-      document.getElementById('ema20').textContent = data.indicators.ema20?.at(-1)?.toFixed(2) || '--';
-      document.getElementById('rsi7').textContent = data.indicators.rsi7?.at(-1)?.toFixed(2) || '--';
-      document.getElementById('fractals').textContent = `${data.indicators.fractalHighs?.length || 0} / ${data.indicators.fractalLows?.length || 0}`;
+      const ema = data.indicators.ema20?.at(-1)?.toFixed(2) || '--';
+      const rsi = data.indicators.rsi7?.at(-1)?.toFixed(2) || '--';
+      const fractals = `${data.indicators.fractalHighs?.length || 0} / ${data.indicators.fractalLows?.length || 0}`;
+
+      document.getElementById('ema20').textContent = ema;
+      document.getElementById('rsi7').textContent = rsi;
+      document.getElementById('fractals').textContent = fractals;
+
+      document.getElementById('ema20_sidebar').textContent = ema;
+      document.getElementById('rsi7_sidebar').textContent = rsi;
+      document.getElementById('fractals_sidebar').textContent = fractals;
 
       const labels = data.candles.map(c => new Date(c.epoch * 1000).toLocaleTimeString());
       const prices = data.candles.map(c => parseFloat(c.close));
@@ -247,6 +168,10 @@
       const res = await fetch('/trade-end', { method: 'POST' });
       if (res.ok) updateStatus(false);
     }
+
+    document.getElementById('menuToggle').addEventListener('click', () => {
+      document.getElementById('profileDropdown').classList.toggle('open');
+    });
 
     setInterval(fetchData, 5000);
     setInterval(fetchBalance, 10000);
