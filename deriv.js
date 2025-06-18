@@ -1,4 +1,4 @@
-// deriv.js without @deriv/deriv-api, using pure WebSocket
+// === deriv.js (updated) ===
 const WebSocket = require('ws');
 require('dotenv').config();
 
@@ -8,10 +8,16 @@ const DEFAULT_COUNT = 100;
 const MAX_RETRIES = 5;
 const RETRY_DELAY = 3000;
 
-const API_TOKEN = process.env.DERIV_API_TOKEN;
-let SYMBOL = process.env.SYMBOL || DEFAULT_SYMBOL;
 const GRANULARITY = parseInt(process.env.GRANULARITY) || DEFAULT_GRANULARITY;
 const COUNT = parseInt(process.env.CANDLE_COUNT) || DEFAULT_COUNT;
+
+function getSymbol() {
+  return process.env.SYMBOL || DEFAULT_SYMBOL;
+}
+
+function getToken() {
+  return process.env.DERIV_API_TOKEN;
+}
 
 let candles = [];
 const openContracts = new Map();
@@ -91,8 +97,6 @@ function handleMessage(message) {
     symbolDetails = data.active_symbols;
     availableSymbols = symbolDetails.map(s => s.symbol);
     console.log('[📃] Available Symbols:', symbolDetails.map(s => `${s.symbol} - ${s.display_name}`).join(', '));
-  } else if (data.msg_type === 'proposal') {
-    // optional handler
   } else if (data.msg_type === 'buy') {
     const contractId = data.buy.contract_id;
     console.log('[🛒] Bought contract:', contractId);
@@ -112,7 +116,7 @@ function handleMessage(message) {
 
 function authorize() {
   return new Promise((resolve, reject) => {
-    send({ authorize: API_TOKEN }, (data) => {
+    send({ authorize: getToken() }, (data) => {
       if (data.error) reject(new Error(data.error.message));
       else resolve(data);
     });
@@ -126,23 +130,23 @@ function loadSymbols() {
 }
 
 function validateSymbol() {
-  if (!availableSymbols.includes(SYMBOL)) {
-    console.error(`[❌] SYMBOL '${SYMBOL}' is invalid.`);
+  if (!availableSymbols.includes(getSymbol())) {
+    console.error(`[❌] SYMBOL '${getSymbol()}' is invalid.`);
     if (typeof onInvalidSymbol === 'function') onInvalidSymbol(availableSymbols);
     disconnect();
     return;
   }
-  console.log(`[✅] SYMBOL '${SYMBOL}' is valid.`);
+  console.log(`[✅] SYMBOL '${getSymbol()}' is valid.`);
 }
 
 function fetchInitialCandles() {
   return new Promise((resolve) => {
-    send({ candles: SYMBOL, count: COUNT, granularity: GRANULARITY }, () => resolve());
+    send({ candles: getSymbol(), count: COUNT, granularity: GRANULARITY }, () => resolve());
   });
 }
 
 function streamCandleUpdates() {
-  send({ ticks_history: SYMBOL, style: 'candles', granularity: GRANULARITY, subscribe: 1 });
+  send({ ticks_history: getSymbol(), style: 'candles', granularity: GRANULARITY, subscribe: 1 });
 }
 
 function streamBalance() {
@@ -153,7 +157,7 @@ function requestTradeProposal(contractType, amount, duration, durationUnit = 'm'
   return new Promise((resolve) => {
     send({
       proposal: 1,
-      symbol: SYMBOL,
+      symbol: getSymbol(),
       contract_type: contractType,
       amount,
       basis: 'stake',
@@ -178,14 +182,12 @@ function disconnect() {
   console.log('[🔌] Disconnected from Deriv WebSocket');
 }
 
-async function reconnectWithNewSymbol(newSymbol) {
-  SYMBOL = newSymbol;
+async function reconnectWithNewSymbol(_) {
   await disconnect();
   connect();
 }
 
-async function reconnectWithNewToken(newToken) {
-  process.env.DERIV_API_TOKEN = newToken;
+async function reconnectWithNewToken(_) {
   await disconnect();
   connect();
 }
@@ -207,7 +209,7 @@ module.exports = {
   getAccountBalance: () => accountBalance,
   getAvailableSymbols: () => availableSymbols,
   getSymbolDetails: () => symbolDetails,
-  getCurrentSymbol: () => SYMBOL,
+  getCurrentSymbol: getSymbol,
   setOnInvalidSymbol: (cb) => (onInvalidSymbol = cb),
   reconnectWithNewSymbol,
   reconnectWithNewToken
