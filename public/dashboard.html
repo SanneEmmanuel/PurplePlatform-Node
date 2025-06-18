@@ -1,49 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PurpleBot Trading Dashboard</title>
-  <link rel="stylesheet" href="/styles/dashboard.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PurpleBot Dashboard</title>
+  <link href="dashboard.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <header class="header">
+  <header>
     <div class="left-header">
-      <button class="menu-toggle" onclick="toggleSidebar()">
-        &#9776;
-      </button>
+      <button id="menuBtn">☰</button>
       <select id="symbolDropdown"></select>
-      <span id="symbolError" class="error-msg">Invalid symbol</span>
+      <span id="symbolError" class="error" style="display: none;">Invalid symbol</span>
     </div>
-    <div class="right-header">
-      <div class="account-summary">
-        <div id="accountDetails" class="account-text">Account: --</div>
-        <div class="balance-status">
-          <span id="accountBalance">Balance: $0.00</span>
-          <span id="statusIndicator">[Stopped]</span>
-        </div>
-      </div>
+    <div class="account-info">
+      <div id="accountDetails">Account: --</div>
+      <div><span id="accountBalance">Balance: $0.00</span> <span id="statusIndicator">[Stopped]</span></div>
     </div>
   </header>
 
-  <div class="layout">
+  <div class="container">
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-section">
-        <h3>Indicators</h3>
-        <div class="indicator">EMA(20): <span id="ema20">--</span></div>
-        <div class="indicator">RSI(7): <span id="rsi7">--</span></div>
-        <div class="indicator">Fractals: <span id="fractals">--</span></div>
-      </div>
-      <div class="sidebar-section">
-        <h3>Options</h3>
-        <button onclick="startBot()" class="btn start-btn" id="startBtn">Start Bot</button>
-        <button onclick="stopBot()" class="btn stop-btn" id="stopBtn">Stop Bot</button>
-      </div>
+      <h3>Indicators</h3>
+      <div class="indicator-value">EMA(20): <span id="ema20">--</span></div>
+      <div class="indicator-value">RSI(7): <span id="rsi7">--</span></div>
+      <div class="indicator-value">Fractals: <span id="fractals">--</span></div>
     </aside>
 
     <main class="main">
       <canvas id="chartCanvas"></canvas>
+      <div class="controls">
+        <button onclick="startBot()" class="start-btn" id="startBtn">Start Bot</button>
+        <button onclick="stopBot()" class="stop-btn" id="stopBtn">Stop Bot</button>
+      </div>
     </main>
   </div>
 
@@ -67,6 +57,14 @@
 
     let isBotRunning = false;
 
+    document.getElementById('symbolDropdown').addEventListener('change', (e) => {
+      setSymbol(e.target.value);
+    });
+
+    document.getElementById('menuBtn').addEventListener('click', () => {
+      document.getElementById('sidebar').classList.toggle('visible');
+    });
+
     async function fetchSymbolList() {
       const res = await fetch('/symbol-info');
       const data = await res.json();
@@ -87,10 +85,9 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol })
       });
-      document.getElementById('symbolError').style.display = res.ok ? 'none' : 'inline';
+      const err = document.getElementById('symbolError');
+      err.style.display = res.ok ? 'none' : 'inline';
     }
-
-    document.getElementById('symbolDropdown').addEventListener('change', (e) => setSymbol(e.target.value));
 
     async function fetchData() {
       const res = await fetch('/api/chart-data');
@@ -105,7 +102,7 @@
 
       const trades = [...data.activeTrades, ...data.closedTrades];
       const tradeMarkers = trades.map(t => ({
-        label: t.contract_type + ' ' + t.contract_id,
+        label: `${t.contract_type} ${t.contract_id}`,
         data: [{ x: new Date(t.entry_tick_time * 1000).toLocaleTimeString(), y: t.entry_tick }],
         borderColor: t.contract_type === 'CALL' ? 'lime' : 'red',
         borderWidth: 2,
@@ -145,6 +142,16 @@
       document.getElementById('accountDetails').textContent = details;
     }
 
+    async function fetchBotStatus() {
+      try {
+        const res = await fetch('/api/bot-status');
+        const data = await res.json();
+        updateStatus(data.running);
+      } catch (err) {
+        console.error('[❌] Failed to fetch bot status:', err.message);
+      }
+    }
+
     function updateStatus(running) {
       isBotRunning = running;
       document.getElementById('statusIndicator').textContent = running ? '[Running]' : '[Stopped]';
@@ -162,16 +169,13 @@
       if (res.ok) updateStatus(false);
     }
 
-    function toggleSidebar() {
-      document.getElementById('sidebar').classList.toggle('collapsed');
-    }
-
     setInterval(fetchData, 5000);
     setInterval(fetchBalance, 10000);
     fetchSymbolList();
     fetchData();
     fetchBalance();
     fetchAccountInfo();
+    fetchBotStatus(); // ✅ Bot status check on load
   </script>
 </body>
 </html>
