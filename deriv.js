@@ -1,5 +1,4 @@
-// deriv.js without waitUntil, simplified and more resilient
-const DerivAPIBasic = require('@deriv/deriv-api/dist/DerivAPIBasic');
+// deriv.js without @deriv/deriv-api, using pure WebSocket
 const WebSocket = require('ws');
 require('dotenv').config();
 
@@ -23,13 +22,21 @@ let accountBalance = null;
 let onInvalidSymbol = null;
 
 let connection = null;
-let api = null;
 let retries = 0;
 let isConnecting = false;
+let msgId = 1;
+const callbacks = new Map();
+
+function send(payload, cb) {
+  payload.req_id = msgId++;
+  if (cb) callbacks.set(payload.req_id, cb);
+  connection.send(JSON.stringify(payload));
+}
 
 function createConnection() {
   connection = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=1089');
-  api = new DerivAPIBasic({ connection });
+  connection.on('message', handleMessage);
+  connection.on('error', console.error);
 }
 
 async function connect() {
@@ -43,15 +50,13 @@ async function connect() {
       connection.on('error', reject);
     });
 
-    await api.account.authorize(API_TOKEN);
-    console.log('[✅] Authorized:', (await api.account.getAccount()).loginid);
-
+    await authorize();
+    console.log('[✅] Authorized');
     await loadSymbols();
     validateSymbol();
     await fetchInitialCandles();
     streamCandleUpdates();
     streamBalance();
-
     retries = 0;
   } catch (err) {
     console.error(`[❌] Connection error: ${err.message}`);
@@ -67,11 +72,57 @@ async function connect() {
   }
 }
 
-async function loadSymbols() {
-  const res = await api.basic.activeSymbols({ brief: true });
-  symbolDetails = res;
-  availableSymbols = res.map(s => s.symbol);
-  console.log('[📃] Available Symbols:', symbolDetails.map(s => `${s.symbol} - ${s.display_name}`).join(', '));
+function handleMessage(message) {
+  const data = JSON.parse(message);
+  if (data.req_id && callbacks.has(data.req_id)) {
+    const cb = callbacks.get(data.req_id);
+    callbacks.delete(data.req_id);
+    cb(data);
+  }
+  if (data.msg_type === 'balance') {
+    accountBalance = data.balance.balance;
+    console.log(`[💰] Balance: $${accountBalance.toFixed(2)}`);
+  } else if (data.msg_type === 'candles') {
+    candles = data.candles;
+  } else if (data.msg_type === 'ohlc') {
+    candles.push(data.ohlc);
+    if (candles.length > COUNT) candles.shift();
+  } else if (data.msg_type === 'active_symbols') {
+    symbolDetails = data.active_symbols;
+    availableSymbols = symbolDetails.map(s => s.symbol);
+    console.log('[📃] Available Symbols:', symbolDetails.map(s => `${s.symbol} - ${s.display_name}`).join(', '));
+  } else if (data.msg_type === 'proposal') {
+    // optional handler
+  } else if (data.msg_type === 'buy') {
+    const contractId = data.buy.contract_id;
+    console.log('[🛒] Bought contract:', contractId);
+    trackContract(contractId);
+  } else if (data.msg_type === 'open_contract') {
+    const contract = data.open_contract;
+    if (contract.is_sold) {
+      openContracts.delete(contract.contract_id);
+      closedContracts.set(contract.contract_id, contract);
+      console.log('[📕] Contract closed:', contract.contract_id);
+    } else {
+      openContracts.set(contract.contract_id, contract);
+      console.log('[📗] Contract updated:', contract.contract_id);
+    }
+  }
+}
+
+function authorize() {
+  return new Promise((resolve, reject) => {
+    send({ authorize: API_TOKEN }, (data) => {
+      if (data.error) reject(new Error(data.error.message));
+      else resolve(data);
+    });
+  });
+}
+
+function loadSymbols() {
+  return new Promise((resolve) => {
+    send({ active_symbols: 'brief', product_type: 'basic' }, () => resolve());
+  });
 }
 
 function validateSymbol() {
@@ -84,80 +135,47 @@ function validateSymbol() {
   console.log(`[✅] SYMBOL '${SYMBOL}' is valid.`);
 }
 
-async function fetchInitialCandles() {
-  try {
-    candles = await api.ticks.candles({ symbol: SYMBOL, granularity: GRANULARITY, count: COUNT });
-  } catch (err) {
-    console.error('[⚠️] Failed to fetch initial candles:', err.message);
-  }
-}
-
-async function streamCandleUpdates() {
-  const stream = await api.ticks.subscribeCandles({ symbol: SYMBOL, granularity: GRANULARITY });
-  stream.onUpdate((candle) => {
-    candles.push(candle);
-    if (candles.length > COUNT) candles.shift();
-  });
-  stream.onError((err) => {
-    console.error('[⚠️] Candle stream error:', err.message);
+function fetchInitialCandles() {
+  return new Promise((resolve) => {
+    send({ candles: SYMBOL, count: COUNT, granularity: GRANULARITY }, () => resolve());
   });
 }
 
-async function streamBalance() {
-  const stream = await api.account.subscribeBalance();
-  stream.onUpdate((balance) => {
-    accountBalance = balance.balance;
-    console.log(`[💰] Balance: $${accountBalance.toFixed(2)}`);
-  });
-  stream.onError((err) => {
-    console.error('[⚠️] Balance stream error:', err.message);
+function streamCandleUpdates() {
+  send({ ticks_history: SYMBOL, style: 'candles', granularity: GRANULARITY, subscribe: 1 });
+}
+
+function streamBalance() {
+  send({ balance: 1, subscribe: 1 });
+}
+
+function requestTradeProposal(contractType, amount, duration, durationUnit = 'm') {
+  return new Promise((resolve) => {
+    send({
+      proposal: 1,
+      symbol: SYMBOL,
+      contract_type: contractType,
+      amount,
+      basis: 'stake',
+      currency: 'USD',
+      duration,
+      duration_unit: durationUnit,
+      subscribe: 1
+    }, resolve);
   });
 }
 
-async function requestTradeProposal(contractType, amount, duration, durationUnit = 'm') {
-  return await api.contract.proposal({
-    symbol: SYMBOL,
-    contract_type: contractType,
-    amount,
-    basis: 'stake',
-    currency: 'USD',
-    duration,
-    duration_unit: durationUnit,
-    subscribe: 1
-  });
+function buyContract(proposalId, price) {
+  send({ buy: 1, price, proposal_id: proposalId });
 }
 
-async function buyContract(proposalId, price) {
-  const response = await api.contract.buy({ proposal_id: proposalId, price });
-  const contractId = response.buy.contract_id;
-  console.log('[🛒] Bought contract:', contractId);
-  trackContract(contractId);
+function trackContract(contractId) {
+  send({ open_contract: 1, contract_id: contractId, subscribe: 1 });
 }
 
-async function trackContract(contractId) {
-  const stream = await api.contract.subscribeOpenContract({ contract_id: contractId });
-  stream.onUpdate((contract) => {
-    if (contract.is_sold) {
-      openContracts.delete(contract.contract_id);
-      closedContracts.set(contract.contract_id, contract);
-      console.log('[📕] Contract closed:', contract.contract_id);
-    } else {
-      openContracts.set(contract.contract_id, contract);
-      console.log('[📗] Contract updated:', contract.contract_id);
-    }
-  });
-  stream.onError((err) => {
-    console.error(`[⚠️] Contract stream error: ${err.message}`);
-  });
-}
-
-async function disconnect() {
-  try {
-    if (api) await api.disconnect();
-    console.log('[🔌] Disconnected from Deriv WebSocket');
-  } catch (e) {
-    console.error('[⚠️] Error on disconnect:', e.message);
-  }
+function disconnect() {
+  if (connection) connection.close();
+  console.log('[🔌] Disconnected from Deriv WebSocket');
 }
 
 async function reconnectWithNewSymbol(newSymbol) {
@@ -174,7 +192,7 @@ async function reconnectWithNewToken(newToken) {
 
 process.on('SIGINT', async () => {
   console.log('\n[🛑] Shutting down...');
-  await disconnect();
+  disconnect();
   process.exit();
 });
 
