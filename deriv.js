@@ -1,4 +1,4 @@
-// === deriv.js (enhanced with logging, validation, and runtime resilience) ===
+// === deriv.js (enhanced, accurate candle syncing, dynamic exports) ===
 const WebSocket = require('ws');
 require('dotenv').config();
 
@@ -30,6 +30,10 @@ function getToken() {
 }
 
 let candles = [];
+function getCandles() {
+  return candles;
+}
+
 const openContracts = new Map();
 const closedContracts = new Map();
 let availableSymbols = [];
@@ -96,42 +100,64 @@ function handleMessage(message) {
     callbacks.delete(data.req_id);
     cb(data);
   }
-  if (data.msg_type === 'authorize') {
-    const auth = data.authorize;
-    accountInfo = {
-      loginid: auth.loginid,
-      currency: auth.currency,
-      is_virtual: auth.is_virtual,
-      email: auth.email,
-      fullname: auth.fullname || ''
-    };
-    console.log(`[👤] Logged in as ${auth.loginid} (${auth.is_virtual ? 'Demo' : 'Real'})`);
-  } else if (data.msg_type === 'balance') {
-    accountBalance = data.balance.balance;
-    console.log(`[💰] Balance: $${accountBalance.toFixed(2)}`);
-  } else if (data.msg_type === 'candles') {
-    candles = data.candles;
-  } else if (data.msg_type === 'ohlc') {
-    candles.push(data.ohlc);
-    if (candles.length > COUNT) candles.shift();
-  } else if (data.msg_type === 'active_symbols') {
-    symbolDetails = data.active_symbols;
-    availableSymbols = symbolDetails.map(s => s.symbol);
-    console.log('[📃] Available Symbols:', symbolDetails.map(s => `${s.symbol} - ${s.display_name}`).join(', '));
-  } else if (data.msg_type === 'buy') {
-    const contractId = data.buy.contract_id;
-    console.log('[🛒] Bought contract:', contractId);
-    trackContract(contractId);
-  } else if (data.msg_type === 'open_contract') {
-    const contract = data.open_contract;
-    if (contract.is_sold) {
-      openContracts.delete(contract.contract_id);
-      closedContracts.set(contract.contract_id, contract);
-      console.log('[📕] Contract closed:', contract.contract_id);
-    } else {
-      openContracts.set(contract.contract_id, contract);
-      console.log('[📗] Contract updated:', contract.contract_id);
-    }
+
+  switch (data.msg_type) {
+    case 'authorize':
+      const auth = data.authorize;
+      accountInfo = {
+        loginid: auth.loginid,
+        currency: auth.currency,
+        is_virtual: auth.is_virtual,
+        email: auth.email,
+        fullname: auth.fullname || ''
+      };
+      console.log(`[👤] Logged in as ${auth.loginid} (${auth.is_virtual ? 'Demo' : 'Real'})`);
+      break;
+
+    case 'balance':
+      accountBalance = data.balance.balance;
+      console.log(`[💰] Balance: $${accountBalance.toFixed(2)}`);
+      break;
+
+    case 'candles':
+      candles = data.candles || [];
+      console.log(`[📈] Initial candles received: ${candles.length}`);
+      break;
+
+    case 'ohlc':
+      const updated = data.ohlc;
+      const index = candles.findIndex(c => c.epoch === updated.epoch);
+      if (index !== -1) {
+        candles[index] = updated;
+      } else {
+        candles.push(updated);
+        if (candles.length > COUNT) candles.shift();
+      }
+      break;
+
+    case 'active_symbols':
+      symbolDetails = data.active_symbols;
+      availableSymbols = symbolDetails.map(s => s.symbol);
+      console.log('[📃] Available Symbols:', symbolDetails.map(s => `${s.symbol} - ${s.display_name}`).join(', '));
+      break;
+
+    case 'buy':
+      const contractId = data.buy.contract_id;
+      console.log('[🛒] Bought contract:', contractId);
+      trackContract(contractId);
+      break;
+
+    case 'open_contract':
+      const contract = data.open_contract;
+      if (contract.is_sold) {
+        openContracts.delete(contract.contract_id);
+        closedContracts.set(contract.contract_id, contract);
+        console.log('[📕] Contract closed:', contract.contract_id);
+      } else {
+        openContracts.set(contract.contract_id, contract);
+        console.log('[📗] Contract updated:', contract.contract_id);
+      }
+      break;
   }
 }
 
@@ -164,13 +190,31 @@ function validateSymbol() {
 }
 
 function fetchInitialCandles() {
-  return new Promise((resolve) => {
-    send({ candles: getSymbol(), count: COUNT, granularity: GRANULARITY }, () => resolve());
+  return new Promise((resolve, reject) => {
+    send({
+      candles: getSymbol(),
+      count: COUNT,
+      granularity: GRANULARITY
+    }, (data) => {
+      if (data.error) return reject(data.error.message);
+      if (data.candles) {
+        candles = data.candles;
+        console.log(`[✅] Fetched ${candles.length} historical candles.`);
+        resolve();
+      } else {
+        reject('No candle data returned');
+      }
+    });
   });
 }
 
 function streamCandleUpdates() {
-  send({ ticks_history: getSymbol(), style: 'candles', granularity: GRANULARITY, subscribe: 1 });
+  send({
+    ticks_history: getSymbol(),
+    style: 'candles',
+    granularity: GRANULARITY,
+    subscribe: 1
+  });
 }
 
 function streamBalance() {
@@ -227,7 +271,7 @@ process.on('SIGINT', async () => {
 connect();
 
 module.exports = {
-  candles,
+  getCandles,
   openContracts,
   closedContracts,
   requestTradeProposal,
