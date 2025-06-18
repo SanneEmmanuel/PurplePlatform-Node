@@ -1,5 +1,5 @@
-// === main.js (updated with /api/account-info and /api/token-status) ===
-//PurpleBot by Sanne Karibo
+// === main.js (synced with enhanced deriv.js) ===
+// PurpleBot by Sanne Karibo
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
@@ -17,6 +17,7 @@ const server = http.createServer(app);
 const wss = new Server({ server });
 
 const PORT = process.env.PORT || 3000;
+const TRADE_INTERVAL_MS = 10 * 1000;
 
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -24,13 +25,13 @@ app.use(express.json());
 
 let tradingInterval = null;
 let lastProposal = null;
-const TRADE_INTERVAL_MS = 10 * 1000;
+let lastCandleEpoch = 0;
 
 wss.on('connection', (socket) => {
   console.log('[🌐] WebSocket client connected');
 
   const sendLiveData = async () => {
-    const candles = deriv.candles || [];
+    const candles = deriv.getCandles();
     const indicatorResults = {
       ema20: await indicators.calculateEMA(candles, 20),
       rsi7: await indicators.calculateRSI(candles, 7),
@@ -134,22 +135,28 @@ app.get('/api/balance', (req, res) => {
 });
 
 app.get('/api/chart-data', async (req, res) => {
-  const candles = deriv.candles;
+  const candles = deriv.getCandles();
+  if (!candles || candles.length === 0) {
+    return res.status(202).json({ message: 'Candle data not yet available' });
+  }
+
+  console.log(`[📊] Chart data request — ${candles.length} candles`);
+
   const ema20 = await indicators.calculateEMA(candles, 20);
   const rsi7 = await indicators.calculateRSI(candles, 7);
   const fractals = await indicators.calculateBillWilliamsFractals(candles);
 
-  const indicatorResults = {
-    ema20,
-    rsi7,
-    fractalHighs: fractals.upper,
-    fractalLows: fractals.lower
-  };
-
-  const activeTrades = Array.from(deriv.openContracts.values());
-  const closedTrades = Array.from(deriv.closedContracts.values());
-
-  res.json({ candles, indicators: indicatorResults, activeTrades, closedTrades });
+  res.json({
+    candles,
+    indicators: {
+      ema20,
+      rsi7,
+      fractalHighs: fractals.upper,
+      fractalLows: fractals.lower
+    },
+    activeTrades: Array.from(deriv.openContracts.values()),
+    closedTrades: Array.from(deriv.closedContracts.values())
+  });
 });
 
 async function updateEnvVariable(key, value) {
@@ -158,8 +165,8 @@ async function updateEnvVariable(key, value) {
     let content = '';
     try { content = await fs.readFile(envPath, 'utf8'); } catch {}
     const lines = content.split('\n');
-    const updated = lines.map(line => (line.startsWith(key + '=') ? `${key}=${value}` : line));
-    if (!lines.some(line => line.startsWith(key + '='))) updated.push(`${key}=${value}`);
+    const updated = lines.map(line => line.startsWith(`${key}=`) ? `${key}=${value}` : line);
+    if (!lines.some(line => line.startsWith(`${key}=`))) updated.push(`${key}=${value}`);
     await fs.writeFile(envPath, updated.join('\n'));
     process.env[key] = value;
   } catch (err) {
@@ -168,10 +175,8 @@ async function updateEnvVariable(key, value) {
   }
 }
 
-let lastCandleEpoch = 0;
-
 function getTradingSignals() {
-  const candles = deriv.candles;
+  const candles = deriv.getCandles();
   if (!candles || candles.length < 20) return null;
 
   try {
@@ -230,14 +235,11 @@ function getTradingSignals() {
 }
 
 function tradingLoop() {
-  const candles = deriv.candles;
+  const candles = deriv.getCandles();
   if (!candles || candles.length < 20) return;
 
   const latest = candles.at(-1);
-  if (!latest || typeof latest.close === 'undefined') {
-    console.warn('[⚠️] Skipping trade loop — no latest candle');
-    return;
-  }
+  if (!latest || typeof latest.close === 'undefined') return;
 
   const currentEpoch = latest.epoch;
   if (currentEpoch === lastCandleEpoch) return;
@@ -245,9 +247,6 @@ function tradingLoop() {
 
   const signals = getTradingSignals();
   if (!signals) return;
-
-  deriv.lastUpperFractal = signals.lastUpperFractal;
-  deriv.lastLowerFractal = signals.lastLowerFractal;
 
   const openBuyContracts = Array.from(deriv.openContracts.values()).filter(c => c.contract_type === 'CALL');
   const openSellContracts = Array.from(deriv.openContracts.values()).filter(c => c.contract_type === 'PUT');
