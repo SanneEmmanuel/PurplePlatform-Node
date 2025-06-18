@@ -1,8 +1,7 @@
-// === deriv.js (enhanced, accurate candle syncing, dynamic exports) ===
 const WebSocket = require('ws');
 require('dotenv').config();
 
-const DEFAULT_SYMBOL = 'R_100';
+const DEFAULT_SYMBOL = 'stpRNG';
 const DEFAULT_GRANULARITY = 60;
 const DEFAULT_COUNT = 100;
 const MAX_RETRIES = 5;
@@ -30,17 +29,13 @@ function getToken() {
 }
 
 let candles = [];
-function getCandles() {
-  return candles;
-}
-
 const openContracts = new Map();
 const closedContracts = new Map();
 let availableSymbols = [];
 let symbolDetails = [];
 let accountBalance = null;
-let onInvalidSymbol = null;
 let accountInfo = {};
+let onInvalidSymbol = null;
 
 let connection = null;
 let retries = 0;
@@ -51,7 +46,9 @@ const callbacks = new Map();
 function send(payload, cb) {
   payload.req_id = msgId++;
   if (cb) callbacks.set(payload.req_id, cb);
-  connection.send(JSON.stringify(payload));
+  if (connection?.readyState === 1) {
+    connection.send(JSON.stringify(payload));
+  }
 }
 
 function createConnection() {
@@ -63,6 +60,7 @@ function createConnection() {
 async function connect() {
   if (isConnecting) return;
   isConnecting = true;
+
   try {
     createConnection();
 
@@ -74,7 +72,15 @@ async function connect() {
     await authorize();
     console.log('[✅] Authorized');
     await loadSymbols();
-    validateSymbol();
+
+    if (!availableSymbols.includes(getSymbol())) {
+      console.warn(`[⚠️] SYMBOL '${getSymbol()}' is invalid. Falling back to '${DEFAULT_SYMBOL}'`);
+      setRuntimeConfig('SYMBOL', DEFAULT_SYMBOL);
+      if (typeof onInvalidSymbol === 'function') onInvalidSymbol(availableSymbols);
+    } else {
+      console.log(`[✅] SYMBOL '${getSymbol()}' is valid.`);
+    }
+
     await fetchInitialCandles();
     streamCandleUpdates();
     streamBalance();
@@ -120,30 +126,24 @@ function handleMessage(message) {
       break;
 
     case 'candles':
-      candles = data.candles || [];
-      console.log(`[📈] Initial candles received: ${candles.length}`);
+      candles = data.candles;
       break;
 
     case 'ohlc':
-      const updated = data.ohlc;
-      const index = candles.findIndex(c => c.epoch === updated.epoch);
-      if (index !== -1) {
-        candles[index] = updated;
-      } else {
-        candles.push(updated);
-        if (candles.length > COUNT) candles.shift();
-      }
+      candles.push(data.ohlc);
+      if (candles.length > COUNT) candles.shift();
       break;
 
     case 'active_symbols':
       symbolDetails = data.active_symbols;
       availableSymbols = symbolDetails.map(s => s.symbol);
-      console.log('[📃] Available Symbols:', symbolDetails.map(s => `${s.symbol} - ${s.display_name}`).join(', '));
+      console.log('[📃] Available Symbols:', availableSymbols.join(', '));
       break;
 
     case 'buy':
       const contractId = data.buy.contract_id;
-      console.log('[🛒] Bought contract:', contractId);
+      const contractType = data.buy.contract_type;
+      console.log(`[📥] TRADE ENTERED: ${contractType} | Contract ID: ${contractId}`);
       trackContract(contractId);
       break;
 
@@ -178,33 +178,9 @@ function loadSymbols() {
   });
 }
 
-function validateSymbol() {
-  const symbol = getSymbol();
-  if (!availableSymbols.includes(symbol)) {
-    console.error(`[❌] SYMBOL '${symbol}' is invalid.`);
-    if (typeof onInvalidSymbol === 'function') onInvalidSymbol(availableSymbols);
-    disconnect();
-    return;
-  }
-  console.log(`[✅] SYMBOL '${symbol}' is valid.`);
-}
-
 function fetchInitialCandles() {
-  return new Promise((resolve, reject) => {
-    send({
-      candles: getSymbol(),
-      count: COUNT,
-      granularity: GRANULARITY
-    }, (data) => {
-      if (data.error) return reject(data.error.message);
-      if (data.candles) {
-        candles = data.candles;
-        console.log(`[✅] Fetched ${candles.length} historical candles.`);
-        resolve();
-      } else {
-        reject('No candle data returned');
-      }
-    });
+  return new Promise((resolve) => {
+    send({ candles: getSymbol(), count: COUNT, granularity: GRANULARITY }, () => resolve());
   });
 }
 
@@ -238,6 +214,7 @@ function requestTradeProposal(contractType, amount, duration, durationUnit = 'm'
 }
 
 function buyContract(proposalId, price) {
+  console.log(`[📨] Sending BUY order → Proposal ID: ${proposalId}, Price: $${price}`);
   send({ buy: 1, price, proposal_id: proposalId });
 }
 
@@ -252,17 +229,17 @@ function disconnect() {
 
 async function reconnectWithNewSymbol(symbol) {
   setRuntimeConfig('SYMBOL', symbol);
-  await disconnect();
+  disconnect();
   connect();
 }
 
 async function reconnectWithNewToken(token) {
   setRuntimeConfig('API_TOKEN', token);
-  await disconnect();
+  disconnect();
   connect();
 }
 
-process.on('SIGINT', async () => {
+process.on('SIGINT', () => {
   console.log('\n[🛑] Shutting down...');
   disconnect();
   process.exit();
@@ -271,7 +248,7 @@ process.on('SIGINT', async () => {
 connect();
 
 module.exports = {
-  getCandles,
+  candles,
   openContracts,
   closedContracts,
   requestTradeProposal,
