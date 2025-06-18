@@ -1,4 +1,4 @@
-// === main.js (updated) ===
+// === main.js (updated with /api/account-info and /api/token-status) ===
 //PurpleBot by Sanne Karibo
 const express = require('express');
 const path = require('path');
@@ -110,6 +110,18 @@ app.get('/symbol-info', (req, res) => {
   });
 });
 
+app.get('/api/account-info', (req, res) => {
+  const info = deriv.getAccountInfo?.();
+  if (!info || !info.loginid) return res.status(404).json({ error: 'Account not authorized' });
+  res.json(info);
+});
+
+app.get('/api/token-status', (req, res) => {
+  const info = deriv.getAccountInfo?.();
+  const connected = !!(info && info.loginid);
+  res.json({ connected });
+});
+
 app.get('/api/balance', (req, res) => {
   try {
     deriv.requestBalance?.();
@@ -149,7 +161,7 @@ async function updateEnvVariable(key, value) {
     const updated = lines.map(line => (line.startsWith(key + '=') ? `${key}=${value}` : line));
     if (!lines.some(line => line.startsWith(key + '='))) updated.push(`${key}=${value}`);
     await fs.writeFile(envPath, updated.join('\n'));
-    process.env[key] = value; // ✅ Update runtime env
+    process.env[key] = value;
   } catch (err) {
     console.error(`[❌] Failed to update ${key}:`, err.message);
     throw err;
