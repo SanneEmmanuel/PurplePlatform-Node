@@ -1,3 +1,4 @@
+//deriv.js
 const WebSocket = require('ws');
 const fs = require('fs').promises;
 require('dotenv').config();
@@ -236,7 +237,8 @@ function fetchInitialCandles() {
       ticks_history: getSymbol(),
       style: 'candles',
       granularity: GRANULARITY,
-      count: COUNT
+      count: COUNT,
+      end: 'latest' // ✅ Fixes input validation error
     }, (data) => {
       if (data.error) return reject(new Error(data.error.message));
       if (!data.candles?.length) return reject(new Error('Empty candle data'));
