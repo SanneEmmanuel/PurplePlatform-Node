@@ -3,178 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PurpleBot Trading Dashboard</title>
-
-  <!-- Fonts and Chart Libraries -->
+  <title>PurpleBot Dashboard</title>
+  <link rel="stylesheet" href="/dashboard.css" />
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
-
-  <!-- Embedded Styles -->
-  <style>
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: 'Roboto', sans-serif;
-      margin: 0;
-      background-color: #0e0e0e;
-      color: #e0e0e0;
-    }
-
-    header {
-      background: linear-gradient(to right, #1c1c1e, #232323);
-      padding: 0.75rem 1.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid #2c2c2c;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    }
-
-    .menu-icon {
-      font-size: 1.5rem;
-      background: none;
-      color: #fff;
-      border: none;
-      cursor: pointer;
-    }
-
-    .symbol-control {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    select {
-      padding: 0.4rem 0.7rem;
-      border-radius: 6px;
-      background-color: #2b2b2b;
-      color: #fff;
-      border: none;
-    }
-
-    .error-text {
-      color: #ff4e4e;
-      font-size: 0.85rem;
-      display: none;
-    }
-
-    .account-panel {
-      text-align: right;
-    }
-
-    .account-details {
-      font-size: 0.95rem;
-      color: #ffffff;
-      padding-bottom: 0.3rem;
-      font-weight: bold;
-    }
-
-    .balance-status {
-      font-size: 0.9rem;
-      color: #aaa;
-    }
-
-    #statusIndicator {
-      margin-left: 0.5rem;
-      color: #17d4fc;
-      font-weight: bold;
-    }
-
-    .dashboard {
-      display: grid;
-      grid-template-columns: 240px 1fr;
-      height: calc(100vh - 60px);
-    }
-
-    .sidebar {
-      background: #151515;
-      padding: 1rem;
-      border-right: 1px solid #2c2c2c;
-      overflow-y: auto;
-    }
-
-    .sidebar h3, .sidebar h4 {
-      margin-top: 0;
-      color: #aaa;
-      font-size: 1.1rem;
-      border-bottom: 1px solid #444;
-      padding-bottom: 0.5rem;
-    }
-
-    .sidebar div {
-      margin-bottom: 0.5rem;
-      font-size: 0.95rem;
-    }
-
-    .main-panel {
-      padding: 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-    }
-
-    canvas {
-      background-color: #111;
-      border-radius: 12px;
-      border: 1px solid #2c2c2c;
-      height: 100%;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-    }
-
-    .controls {
-      display: flex;
-      gap: 1rem;
-    }
-
-    button {
-      padding: 0.6rem 1rem;
-      border-radius: 6px;
-      font-size: 0.95rem;
-      font-weight: bold;
-      cursor: pointer;
-      border: none;
-      transition: all 0.2s ease;
-    }
-
-    .start-btn {
-      background-color: #28a745;
-      color: white;
-    }
-
-    .start-btn.running {
-      background-color: #ffc107;
-      color: black;
-    }
-
-    .stop-btn {
-      background-color: #dc3545;
-      color: white;
-    }
-
-    .stop-btn.stopped {
-      background-color: #6c757d;
-    }
-
-  </style>
 </head>
 <body>
-
-  <!-- Header -->
-  <header class="app-header">
-    <button id="menuToggle" class="menu-icon">☰</button>
-
+  <header>
+    <button id="menuToggle" class="menu-toggle">☰</button>
     <div class="symbol-control">
       <select id="symbolDropdown"></select>
-      <span id="symbolError" class="error-text">Invalid symbol</span>
+      <span id="symbolError">Invalid symbol</span>
     </div>
-
-    <div class="account-panel">
+    <div class="profile-menu">
       <div id="accountDetails" class="account-details">Account: --</div>
       <div class="balance-status">
         <span id="accountBalance">Balance: $0.00</span>
@@ -183,49 +25,65 @@
     </div>
   </header>
 
-  <!-- Main Dashboard -->
-  <div class="dashboard">
-    <aside id="sidebar" class="sidebar">
+  <div class="container">
+    <aside class="sidebar">
       <h3>Indicators</h3>
-      <div>EMA(20): <span id="ema20">--</span></div>
-      <div>RSI(7): <span id="rsi7">--</span></div>
-      <div>Fractals: <span id="fractals">--</span></div>
-      <hr />
+      <div class="indicator-value">EMA(20): <span id="ema20">--</span></div>
+      <div class="indicator-value">RSI(7): <span id="rsi7">--</span></div>
+      <div class="indicator-value">Fractals: <span id="fractals">--</span></div>
       <h4>Status</h4>
       <div id="botActivity">Waiting...</div>
     </aside>
 
-    <main class="main-panel">
+    <main class="main">
       <canvas id="chartCanvas"></canvas>
       <div class="controls">
-        <button onclick="startBot()" class="start-btn" id="startBtn">Start Bot</button>
-        <button onclick="stopBot()" class="stop-btn" id="stopBtn">Stop Bot</button>
+        <button id="startBtn" class="start-btn" onclick="startBot()">Start Bot</button>
+        <button id="stopBtn" class="stop-btn" onclick="stopBot()">Stop Bot</button>
       </div>
     </main>
   </div>
 
-  <!-- Scripts -->
   <script>
     const chartCtx = document.getElementById('chartCanvas').getContext('2d');
-    let chart = new Chart(chartCtx, {
+    const chart = new Chart(chartCtx, {
       type: 'candlestick',
       data: { datasets: [] },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         scales: {
-          x: { time: { unit: 'minute' }, ticks: { color: '#aaa' } },
+          x: { ticks: { color: '#aaa' } },
           y: { ticks: { color: '#aaa' } }
         },
-        plugins: {
-          legend: { labels: { color: '#fff' } }
-        }
+        plugins: { legend: { labels: { color: '#fff' } } }
       }
     });
 
-    document.getElementById('menuToggle').addEventListener('click', () => {
-      document.getElementById('sidebar').classList.toggle('collapsed');
-    });
+    async function fetchAccountInfo() {
+      const res = await fetch('/api/account-info');
+      const data = await res.json();
+      document.getElementById('accountDetails').textContent =
+        `Account: ${data.fullname?.trim()} (${data.loginid}) [${data.is_virtual ? 'Demo' : 'Real'}] • ${data.currency}`;
+    }
+
+    async function fetchBalance() {
+      const res = await fetch('/api/balance');
+      const data = await res.json();
+      if (data.balance) {
+        document.getElementById('accountBalance').textContent = `Balance: $${data.balance.toFixed(2)}`;
+      }
+    }
+
+    async function fetchStatus() {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      const running = data.trading;
+      document.getElementById('botActivity').textContent = running ? 'Bot is trading...' : 'Bot idle';
+      document.getElementById('statusIndicator').textContent = running ? '[Running]' : '[Stopped]';
+      document.getElementById('startBtn').classList.toggle('running', running);
+      document.getElementById('stopBtn').classList.toggle('stopped', !running);
+    }
 
     async function fetchSymbolList() {
       const res = await fetch('/symbol-info');
@@ -250,11 +108,15 @@
       document.getElementById('symbolError').style.display = res.ok ? 'none' : 'inline';
     }
 
-    async function fetchData() {
-      const res = await fetch('/api/chart-data');
-      const data = await res.json();
+    async function fetchChartData() {
+      const candleRes = await fetch('/api/chart-data');
+      const indicatorRes = await fetch('/api/indicators');
+      const tradesRes = await fetch('/api/active-trades');
 
-      const candles = data.candles.slice(-100);
+      const candles = (await candleRes.json()).candles.slice(-100);
+      const indicators = (await indicatorRes.json()).indicators;
+      const activeTrades = (await tradesRes.json()).activeTrades;
+
       const ohlc = candles.map(c => ({
         x: new Date(c.epoch * 1000),
         o: c.open,
@@ -263,13 +125,9 @@
         c: c.close
       }));
 
-      const trades = [...data.activeTrades, ...data.closedTrades];
-      const tradeMarkers = trades.map(t => ({
+      const tradeMarkers = activeTrades.map(t => ({
         label: `${t.contract_type} ${t.contract_id}`,
-        data: [{
-          x: new Date(t.entry_tick_time * 1000),
-          y: t.entry_tick
-        }],
+        data: [{ x: new Date(t.entry_tick_time * 1000), y: t.entry_tick }],
         borderColor: t.contract_type === 'CALL' ? 'lime' : 'red',
         borderWidth: 2,
         pointRadius: 4,
@@ -282,77 +140,41 @@
           label: 'Candles',
           data: ohlc,
           type: 'candlestick',
-          color: {
-            up: '#0f0',
-            down: '#f00',
-            unchanged: '#999'
-          }
+          color: { up: '#0f0', down: '#f00', unchanged: '#999' }
         },
         ...tradeMarkers
       ];
       chart.update();
 
-      document.getElementById('ema20').textContent = data.indicators.ema20?.at(-1)?.toFixed(2) || '--';
-      document.getElementById('rsi7').textContent = data.indicators.rsi7?.at(-1)?.toFixed(2) || '--';
-      document.getElementById('fractals').textContent = `${data.indicators.fractalHighs?.length || 0} / ${data.indicators.fractalLows?.length || 0}`;
-    }
-
-    async function fetchBalance() {
-      const res = await fetch('/api/balance');
-      const data = await res.json();
-      if (data.balance) {
-        document.getElementById('accountBalance').textContent = `Balance: $${data.balance.toFixed(2)}`;
-      }
-    }
-
-    async function fetchAccountInfo() {
-      try {
-        const res = await fetch('/api/account-info');
-        const data = await res.json();
-        const target = document.getElementById('accountDetails');
-        const info = `Account: ${data.fullname?.trim() || 'Unknown'} (${data.loginid}) [${data.is_virtual ? 'Demo' : 'Real'}] • ${data.currency}`;
-        if (target) target.textContent = info;
-      } catch (err) {
-        console.error('❌ Account info fetch error:', err);
-      }
-    }
-
-    async function fetchBotStatus() {
-      const res = await fetch('/api/bot-status');
-      const data = await res.json();
-
-      const isRunning = data.trading;
-      document.getElementById('botActivity').textContent = isRunning ? 'Bot is trading...' : 'Bot idle';
-      document.getElementById('statusIndicator').textContent = isRunning ? '[Running]' : '[Stopped]';
-
-      document.getElementById('startBtn').classList.toggle('running', isRunning);
-      document.getElementById('stopBtn').classList.toggle('stopped', !isRunning);
+      document.getElementById('ema20').textContent = indicators.ema20?.at(-1)?.toFixed(2) || '--';
+      document.getElementById('rsi7').textContent = indicators.rsi7?.at(-1)?.toFixed(2) || '--';
+      document.getElementById('fractals').textContent =
+        `${indicators.fractalHighs?.length || 0} / ${indicators.fractalLows?.length || 0}`;
     }
 
     async function startBot() {
       const res = await fetch('/trade-start', { method: 'POST' });
-      if (res.ok) fetchBotStatus();
+      if (res.ok) fetchStatus();
     }
 
     async function stopBot() {
       const res = await fetch('/trade-end', { method: 'POST' });
-      if (res.ok) fetchBotStatus();
+      if (res.ok) fetchStatus();
     }
 
     document.getElementById('symbolDropdown').addEventListener('change', (e) => setSymbol(e.target.value));
 
-    // Initialize on load
+    setInterval(fetchChartData, 5000);
+    setInterval(fetchBalance, 10000);
+    setInterval(fetchStatus, 4000);
+
     window.addEventListener('DOMContentLoaded', () => {
-      fetchSymbolList();
       fetchAccountInfo();
-      fetchData();
       fetchBalance();
-      fetchBotStatus();
-      setInterval(fetchData, 5000);
-      setInterval(fetchBalance, 10000);
-      setInterval(fetchBotStatus, 4000);
+      fetchStatus();
+      fetchSymbolList();
+      fetchChartData();
     });
   </script>
-
 </body>
 </html>
