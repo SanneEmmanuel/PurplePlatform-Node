@@ -1,4 +1,3 @@
-//deriv.js
 const WebSocket = require('ws');
 const fs = require('fs').promises;
 require('dotenv').config();
@@ -238,7 +237,7 @@ function fetchInitialCandles() {
       style: 'candles',
       granularity: GRANULARITY,
       count: COUNT,
-      end: 'latest' // ✅ Fixes input validation error
+      end: 'latest'
     }, (data) => {
       if (data.error) return reject(new Error(data.error.message));
       if (!data.candles?.length) return reject(new Error('Empty candle data'));
@@ -303,6 +302,55 @@ async function reconnectWithNewToken(token) {
   connect();
 }
 
+// ✅ New Functions
+
+function getCurrentPrice(symbol = getSymbol()) {
+  return new Promise((resolve, reject) => {
+    send({ ticks: symbol, subscribe: 0 }, (data) => {
+      if (data.error) return reject(new Error(data.error.message));
+      if (!data.tick) return reject(new Error('No tick data received'));
+      resolve(data.tick.quote);
+    });
+  });
+}
+
+function getLast100Ticks(symbol = getSymbol()) {
+  return new Promise((resolve, reject) => {
+    send({
+      ticks_history: symbol,
+      style: 'ticks',
+      count: 100,
+      end: 'latest'
+    }, (data) => {
+      if (data.error) return reject(new Error(data.error.message));
+      resolve(data.history?.prices.map((quote, i) => ({
+        epoch: data.history.times[i],
+        quote
+      })));
+    });
+  });
+}
+
+function getTicksForTraining(count, symbol = getSymbol()) {
+  return new Promise((resolve, reject) => {
+    if (!Number.isInteger(count) || count <= 0 || count > 10000) {
+      return reject(new Error('Invalid count. Must be between 1 and 10000'));
+    }
+    send({
+      ticks_history: symbol,
+      style: 'ticks',
+      count,
+      end: 'latest'
+    }, (data) => {
+      if (data.error) return reject(new Error(data.error.message));
+      resolve(data.history?.prices.map((quote, i) => ({
+        epoch: data.history.times[i],
+        quote
+      })));
+    });
+  });
+}
+
 process.on('SIGINT', () => {
   console.log('\n[🛑] Shutting down...');
   disconnect();
@@ -324,5 +372,8 @@ module.exports = {
   getAccountInfo: () => accountInfo,
   setOnInvalidSymbol: (cb) => (onInvalidSymbol = cb),
   reconnectWithNewSymbol,
-  reconnectWithNewToken
+  reconnectWithNewToken,
+  getCurrentPrice,
+  getLast100Ticks,
+  getTicksForTraining
 };
