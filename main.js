@@ -91,12 +91,10 @@ app.get('/api/balance', (req, res) => {
   res.json({ balance });
 });
 
-// ✅ MODIFIED: Return only candles
 app.get('/api/chart-data', async (req, res) => {
   res.json({ candles: deriv.candles });
 });
 
-// ✅ NEW: Return only indicators
 app.get('/api/indicators', async (req, res) => {
   try {
     const indicatorsData = await gatherIndicatorData();
@@ -107,7 +105,6 @@ app.get('/api/indicators', async (req, res) => {
   }
 });
 
-// ✅ NEW: Return only active trades
 app.get('/api/active-trades', (req, res) => {
   try {
     const activeTrades = Array.from(deriv.openContracts.values());
@@ -118,7 +115,6 @@ app.get('/api/active-trades', (req, res) => {
   }
 });
 
-// ✅ NEW: Simple health check endpoint
 app.get('/ping', (req, res) => {
   res.send('🟢 PurpleBot backend is alive and well!');
 });
@@ -139,6 +135,39 @@ app.post('/set-symbol', async (req, res) => {
   await updateEnv('SYMBOL', symbol);
   deriv.reconnectWithNewSymbol(symbol);
   res.json({ message: 'Symbol updated' });
+});
+
+// ✅ NEW ENDPOINTS for real-time/tick data:
+
+app.get('/api/current-price', async (req, res) => {
+  try {
+    const price = await deriv.getCurrentPrice();
+    res.json({ price, symbol: deriv.getCurrentSymbol() });
+  } catch (err) {
+    console.error('Error fetching current price:', err.message);
+    res.status(500).json({ error: 'Failed to fetch current price' });
+  }
+});
+
+app.get('/api/last-100-ticks', async (req, res) => {
+  try {
+    const ticks = await deriv.getLast100Ticks();
+    res.json({ ticks, symbol: deriv.getCurrentSymbol() });
+  } catch (err) {
+    console.error('Error fetching ticks:', err.message);
+    res.status(500).json({ error: 'Failed to fetch last 100 ticks' });
+  }
+});
+
+app.get('/api/ticks-for-training', async (req, res) => {
+  const count = parseInt(req.query.count) || 1000;
+  try {
+    const ticks = await deriv.getTicksForTraining(count);
+    res.json({ ticks, symbol: deriv.getCurrentSymbol() });
+  } catch (err) {
+    console.error('Error fetching training ticks:', err.message);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // === Helper Functions ===
@@ -176,7 +205,6 @@ async function tradingLoop() {
   const openBuys = Array.from(deriv.openContracts.values()).filter(c => c.contract_type === 'CALL');
   const openSells = Array.from(deriv.openContracts.values()).filter(c => c.contract_type === 'PUT');
 
-  // BUY SIGNAL
   if (rsi7.at(-2) > 55 && prevCandle.close > ema20.at(-2) && openBuys.length < MAX_TRADES) {
     console.log('[📈] BUY Signal Detected');
     const proposal = await deriv.requestTradeProposal('CALL', 10, 5);
@@ -186,7 +214,6 @@ async function tradingLoop() {
     }
   }
 
-  // SELL SIGNAL
   if (rsi7.at(-2) < 45 && prevCandle.close < ema20.at(-2) && openSells.length < MAX_TRADES) {
     console.log('[📉] SELL Signal Detected');
     const proposal = await deriv.requestTradeProposal('PUT', 10, 5);
