@@ -1,5 +1,5 @@
 // main.js (Improved and Structured PurpleBot Backend)
-//PurpleBot by Sanne Karibo
+// PurpleBot by Sanne Karibo
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
@@ -70,7 +70,7 @@ app.post('/trade-end', (req, res) => {
   clearInterval(tradingInterval);
   tradingInterval = null;
   isBotTrading = false;
-  console.log('[🛑] Bot stopped.');
+  console.log('[🐝] Bot stopped.');
   res.json({ message: 'Bot stopped' });
 });
 
