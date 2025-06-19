@@ -2,11 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PurpleBot Trading Dashboard</title>
-  <link rel="stylesheet" href="/dashboard.css" />
+  <link rel="stylesheet" href="/dashboard.css"/>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
 </head>
 <body>
   <header class="app-header">
@@ -47,17 +48,31 @@
   <script>
     const chartCtx = document.getElementById('chartCanvas').getContext('2d');
     let chart = new Chart(chartCtx, {
-      type: 'line',
-      data: { labels: [], datasets: [] },
+      type: 'candlestick',
+      data: {
+        datasets: [{
+          label: 'Candles',
+          data: []
+        }]
+      },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         scales: {
-          x: { display: true },
-          y: { display: true }
+          x: {
+            time: {
+              unit: 'minute'
+            },
+            ticks: { color: '#aaa' }
+          },
+          y: {
+            ticks: { color: '#aaa' }
+          }
         },
         plugins: {
-          legend: { labels: { color: '#fff' } }
+          legend: {
+            labels: { color: '#fff' }
+          }
         }
       }
     });
@@ -93,17 +108,22 @@
       const res = await fetch('/api/chart-data');
       const data = await res.json();
 
-      document.getElementById('ema20').textContent = data.indicators.ema20?.at(-1)?.toFixed(2) || '--';
-      document.getElementById('rsi7').textContent = data.indicators.rsi7?.at(-1)?.toFixed(2) || '--';
-      document.getElementById('fractals').textContent = `${data.indicators.fractalHighs?.length || 0} / ${data.indicators.fractalLows?.length || 0}`;
-
-      const labels = data.candles.map(c => new Date(c.epoch * 1000).toLocaleTimeString());
-      const prices = data.candles.map(c => c.close);
+      const candles = data.candles.slice(-100); // Limit to last 100 candles
+      const ohlc = candles.map(c => ({
+        x: new Date(c.epoch * 1000),
+        o: c.open,
+        h: c.high,
+        l: c.low,
+        c: c.close
+      }));
 
       const trades = [...data.activeTrades, ...data.closedTrades];
       const tradeMarkers = trades.map(t => ({
         label: `${t.contract_type} ${t.contract_id}`,
-        data: [{ x: new Date(t.entry_tick_time * 1000).toLocaleTimeString(), y: t.entry_tick }],
+        data: [{
+          x: new Date(t.entry_tick_time * 1000),
+          y: t.entry_tick
+        }],
         borderColor: t.contract_type === 'CALL' ? 'lime' : 'red',
         borderWidth: 2,
         pointRadius: 4,
@@ -111,20 +131,24 @@
         showLine: false
       }));
 
-      chart.data = {
-        labels,
-        datasets: [
-          {
-            label: 'Price',
-            data: prices,
-            borderColor: '#6a00f4',
-            backgroundColor: 'rgba(106,0,244,0.1)',
-            fill: true
-          },
-          ...tradeMarkers
-        ]
-      };
+      chart.data.datasets = [
+        {
+          label: 'Candles',
+          data: ohlc,
+          type: 'candlestick',
+          color: {
+            up: '#0f0',
+            down: '#f00',
+            unchanged: '#999'
+          }
+        },
+        ...tradeMarkers
+      ];
       chart.update();
+
+      document.getElementById('ema20').textContent = data.indicators.ema20?.at(-1)?.toFixed(2) || '--';
+      document.getElementById('rsi7').textContent = data.indicators.rsi7?.at(-1)?.toFixed(2) || '--';
+      document.getElementById('fractals').textContent = `${data.indicators.fractalHighs?.length || 0} / ${data.indicators.fractalLows?.length || 0}`;
     }
 
     async function fetchBalance() {
@@ -144,8 +168,16 @@
     async function fetchBotStatus() {
       const res = await fetch('/api/bot-status');
       const data = await res.json();
-      document.getElementById('botActivity').textContent = data.trading ? 'Bot is trading...' : 'Bot idle';
-      document.getElementById('statusIndicator').textContent = data.trading ? '[Running]' : '[Stopped]';
+
+      const isRunning = data.trading;
+      document.getElementById('botActivity').textContent = isRunning ? 'Bot is trading...' : 'Bot idle';
+      document.getElementById('statusIndicator').textContent = isRunning ? '[Running]' : '[Stopped]';
+
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+
+      startBtn.classList.toggle('running', isRunning);
+      stopBtn.classList.toggle('stopped', !isRunning);
     }
 
     async function startBot() {
