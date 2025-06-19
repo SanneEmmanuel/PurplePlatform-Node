@@ -1,5 +1,6 @@
-// deriv.js
-//logged version
+// deriv.js (Enhanced & Stable Version)
+// PurpleBot by Sanne Karibo
+
 const WebSocket = require('ws');
 const fs = require('fs').promises;
 require('dotenv').config();
@@ -87,20 +88,40 @@ function send(payload, cb) {
   payload.req_id = msgId++;
   if (cb) callbacks.set(payload.req_id, cb);
   console.log(`[📤] Preparing to send payload:`, payload);
-  if (connection?.readyState === 1) {
+
+  if (connection?.readyState === WebSocket.OPEN) {
     connection.send(JSON.stringify(payload));
     console.log(`[📤] Payload sent.`);
   } else {
-    console.warn('[⚠️] Tried to send but WebSocket is not ready');
+    console.warn('[⚠️] WebSocket not ready, delaying send...');
+    waitForSocketReady()
+      .then(() => {
+        connection.send(JSON.stringify(payload));
+        console.log(`[📤] Delayed payload sent.`);
+      })
+      .catch((err) => {
+        console.error('[❌] Failed to send payload:', err.message);
+      });
   }
 }
 
 function createConnection() {
   console.log('[🌐] Creating WebSocket connection...');
   connection = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=1089');
+
+  connection.on('open', () => {
+    console.log('[✅] WebSocket connection is now open');
+  });
+
   connection.on('message', handleMessage);
+
   connection.on('error', (err) => {
     console.error('[❌] WebSocket error:', err.message);
+  });
+
+  connection.on('close', () => {
+    console.warn('[🔌] WebSocket closed. Reconnecting...');
+    connect();
   });
 }
 
@@ -113,14 +134,8 @@ async function connect() {
     createConnection();
 
     await new Promise((resolve, reject) => {
-      connection.on('open', () => {
-        console.log('[✅] WebSocket opened');
-        resolve();
-      });
-      connection.on('error', (err) => {
-        console.error('[❌] WS connection error:', err.message);
-        reject(err);
-      });
+      connection.on('open', resolve);
+      connection.on('error', reject);
     });
 
     await authorize();
@@ -151,7 +166,7 @@ async function connect() {
       if (candles?.length) await saveToFile('candles.json', candles);
     }
 
-    streamCandleUpdates();
+    // streamCandleUpdates(); ← Skipped, not supported for 'candles'
     streamBalance();
     retries = 0;
   } catch (err) {
@@ -251,29 +266,26 @@ function loadSymbols() {
 
 function fetchInitialCandles() {
   console.log('[📥] Fetching initial candles...');
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - (COUNT * GRANULARITY);
   return new Promise((resolve, reject) => {
     send({
       ticks_history: getSymbol(),
       style: 'candles',
       granularity: GRANULARITY,
-      count: COUNT,
-      end: 'latest'
+      start,
+      end
     }, (data) => {
       if (data.error) return reject(new Error(data.error.message));
       candles = data.candles;
+      console.log(`[📥] Fetched ${candles.length} candles.`);
       resolve();
     });
   });
 }
 
 function streamCandleUpdates() {
-  console.log('[📶] Subscribing to candle updates...');
-  send({
-    ticks_history: getSymbol(),
-    style: 'candles',
-    granularity: GRANULARITY,
-    subscribe: 1
-  });
+  console.log('[⚠️] Skipping candle subscribe — Deriv does not support it properly.');
 }
 
 function streamBalance() {
@@ -309,8 +321,10 @@ function trackContract(contractId) {
 }
 
 function disconnect() {
-  if (connection) connection.close();
-  console.log('[🔌] Disconnected from Deriv WebSocket');
+  if (connection && connection.readyState === WebSocket.OPEN) {
+    connection.close(1000, 'Client disconnect');
+    console.log('[🔌] Disconnected from Deriv WebSocket');
+  }
 }
 
 async function reconnectWithNewSymbol(symbol) {
@@ -393,7 +407,7 @@ process.on('SIGINT', () => {
   process.exit();
 });
 
-connect();
+connect(); // start at app launch
 
 module.exports = {
   candles,
