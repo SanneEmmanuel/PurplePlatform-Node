@@ -1,3 +1,5 @@
+//deriv.js by Sanne Emmanuel Karibo
+// deriv.js
 const WebSocket = require('ws');
 const fs = require('fs').promises;
 require('dotenv').config();
@@ -65,18 +67,37 @@ async function loadFromFile(filename) {
   }
 }
 
+function waitForSocketReady(timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const check = () => {
+      if (connection?.readyState === 1) return resolve();
+      if (Date.now() - start > timeout) return reject(new Error('WebSocket not ready'));
+      setTimeout(check, 100);
+    };
+    check();
+  });
+}
+
 function send(payload, cb) {
   payload.req_id = msgId++;
   if (cb) callbacks.set(payload.req_id, cb);
+
   if (connection?.readyState === 1) {
     connection.send(JSON.stringify(payload));
+    console.log(`[📤] Sent payload:`, payload);
+  } else {
+    console.warn('[⚠️] Tried to send but WebSocket is not ready');
   }
 }
 
 function createConnection() {
+  console.log('[🌐] Creating WebSocket connection...');
   connection = new WebSocket('wss://ws.derivws.com/websockets/v3?app_id=1089');
   connection.on('message', handleMessage);
-  connection.on('error', console.error);
+  connection.on('error', (err) => {
+    console.error('[❌] WebSocket error:', err.message);
+  });
 }
 
 async function connect() {
@@ -87,12 +108,18 @@ async function connect() {
     createConnection();
 
     await new Promise((resolve, reject) => {
-      connection.on('open', resolve);
-      connection.on('error', reject);
+      connection.on('open', () => {
+        console.log('[✅] WebSocket opened');
+        resolve();
+      });
+      connection.on('error', (err) => {
+        console.error('[❌] WS connection error:', err.message);
+        reject(err);
+      });
     });
 
     await authorize();
-    console.log('[✅] Authorized');
+    console.log('[🔑] Authorized successfully');
 
     const loadedSymbols = await loadFromFile('symbols.json');
     if (loadedSymbols) {
@@ -115,16 +142,8 @@ async function connect() {
       candles = loadedCandles;
       console.log(`[📊] Loaded ${candles.length} candles from cache`);
     } else {
-      try {
-        await fetchInitialCandles();
-        if (candles?.length) {
-          await saveToFile('candles.json', candles);
-        } else {
-          console.warn('[❌] No candles returned from API');
-        }
-      } catch (err) {
-        console.error('[❌] Error fetching candles:', err.message);
-      }
+      await fetchInitialCandles();
+      if (candles?.length) await saveToFile('candles.json', candles);
     }
 
     streamCandleUpdates();
@@ -134,10 +153,8 @@ async function connect() {
     console.error(`[❌] Connection error: ${err.message}`);
     retries++;
     if (retries <= MAX_RETRIES) {
-      console.log(`[🔁] Retrying to connect in ${RETRY_DELAY / 1000}s... (${retries}/${MAX_RETRIES})`);
+      console.log(`[🔁] Retrying in ${RETRY_DELAY / 1000}s... (${retries}/${MAX_RETRIES})`);
       setTimeout(connect, RETRY_DELAY);
-    } else {
-      console.error('[🛑] Max retries reached. Could not connect to Deriv API.');
     }
   } finally {
     isConnecting = false;
@@ -162,7 +179,7 @@ function handleMessage(message) {
         email: auth.email,
         fullname: auth.fullname || ''
       };
-      console.log(`[👤] Logged in as ${auth.loginid} (${auth.is_virtual ? 'Demo' : 'Real'})`);
+      console.log(`[👤] Logged in as ${auth.loginid}`);
       break;
 
     case 'balance':
@@ -185,14 +202,10 @@ function handleMessage(message) {
     case 'active_symbols':
       symbolDetails = data.active_symbols;
       availableSymbols = symbolDetails.map(s => s.symbol);
-      console.log('[📃] Available Symbols:', availableSymbols.join(', '));
       break;
 
     case 'buy':
-      const contractId = data.buy.contract_id;
-      const contractType = data.buy.contract_type;
-      console.log(`[📥] TRADE ENTERED: ${contractType} | Contract ID: ${contractId}`);
-      trackContract(contractId);
+      trackContract(data.buy.contract_id);
       break;
 
     case 'open_contract':
@@ -200,10 +213,8 @@ function handleMessage(message) {
       if (contract.is_sold) {
         openContracts.delete(contract.contract_id);
         closedContracts.set(contract.contract_id, contract);
-        console.log('[📕] Contract closed:', contract.contract_id);
       } else {
         openContracts.set(contract.contract_id, contract);
-        console.log('[📗] Contract updated:', contract.contract_id);
       }
       break;
   }
@@ -232,6 +243,7 @@ function loadSymbols() {
 
 function fetchInitialCandles() {
   return new Promise((resolve, reject) => {
+    console.log(`[📩] Fetching initial candles for ${getSymbol()}`);
     send({
       ticks_history: getSymbol(),
       style: 'candles',
@@ -240,7 +252,6 @@ function fetchInitialCandles() {
       end: 'latest'
     }, (data) => {
       if (data.error) return reject(new Error(data.error.message));
-      if (!data.candles?.length) return reject(new Error('Empty candle data'));
       candles = data.candles;
       resolve();
     });
@@ -277,7 +288,6 @@ function requestTradeProposal(contractType, amount, duration, durationUnit = 'm'
 }
 
 function buyContract(proposalId, price) {
-  console.log(`[📨] Sending BUY order → Proposal ID: ${proposalId}, Price: $${price}`);
   send({ buy: 1, price, proposal_id: proposalId });
 }
 
@@ -302,57 +312,68 @@ async function reconnectWithNewToken(token) {
   connect();
 }
 
-// ✅ New Functions
-
-function getCurrentPrice(symbol = getSymbol()) {
-  return new Promise((resolve, reject) => {
-    send({ ticks: symbol, subscribe: 0 }, (data) => {
-      if (data.error) return reject(new Error(data.error.message));
-      if (!data.tick) return reject(new Error('No tick data received'));
-      resolve(data.tick.quote);
+async function getCurrentPrice() {
+  try {
+    console.log(`[🔍] getCurrentPrice → Symbol: ${getSymbol()}`);
+    await waitForSocketReady();
+    return new Promise((resolve, reject) => {
+      send({ ticks: getSymbol(), subscribe: 0 }, (data) => {
+        if (data.error) {
+          console.error('[❌] getCurrentPrice error:', data.error);
+          return reject(new Error(data.error.message));
+        }
+        console.log('[📈] Current price data:', data);
+        resolve(data.tick.quote);
+      });
     });
-  });
+  } catch (err) {
+    console.error('[❌] getCurrentPrice failed:', err.message);
+    throw err;
+  }
 }
 
-function getLast100Ticks(symbol = getSymbol()) {
-  return new Promise((resolve, reject) => {
-    send({
-      ticks_history: symbol,
-      style: 'ticks',
-      count: 100,
-      end: 'latest'
-    }, (data) => {
-      if (data.error) return reject(new Error(data.error.message));
-      resolve(data.history?.prices.map((quote, i) => ({
-        epoch: data.history.times[i],
-        quote
-      })));
+async function getLast100Ticks() {
+  try {
+    console.log(`[🔍] getLast100Ticks → Symbol: ${getSymbol()}`);
+    await waitForSocketReady();
+    return new Promise((resolve, reject) => {
+      send({ ticks_history: getSymbol(), count: 100, end: 'latest', style: 'ticks' }, (data) => {
+        if (data.error) {
+          console.error('[❌] getLast100Ticks error:', data.error);
+          return reject(new Error(data.error.message));
+        }
+        console.log('[📊] Last 100 ticks:', data);
+        resolve(data.history?.prices || []);
+      });
     });
-  });
+  } catch (err) {
+    console.error('[❌] getLast100Ticks failed:', err.message);
+    throw err;
+  }
 }
 
-function getTicksForTraining(count, symbol = getSymbol()) {
-  return new Promise((resolve, reject) => {
-    if (!Number.isInteger(count) || count <= 0 || count > 10000) {
-      return reject(new Error('Invalid count. Must be between 1 and 10000'));
-    }
-    send({
-      ticks_history: symbol,
-      style: 'ticks',
-      count,
-      end: 'latest'
-    }, (data) => {
-      if (data.error) return reject(new Error(data.error.message));
-      resolve(data.history?.prices.map((quote, i) => ({
-        epoch: data.history.times[i],
-        quote
-      })));
+async function getTicksForTraining(count) {
+  try {
+    console.log(`[🔍] getTicksForTraining → Symbol: ${getSymbol()}, Count: ${count}`);
+    await waitForSocketReady();
+    if (count < 1 || count > 10000) throw new Error('Count must be between 1 and 10000');
+    return new Promise((resolve, reject) => {
+      send({ ticks_history: getSymbol(), count, end: 'latest', style: 'ticks' }, (data) => {
+        if (data.error) {
+          console.error('[❌] getTicksForTraining error:', data.error);
+          return reject(new Error(data.error.message));
+        }
+        console.log('[📉] Training ticks:', data);
+        resolve(data.history?.prices || []);
+      });
     });
-  });
+  } catch (err) {
+    console.error('[❌] getTicksForTraining failed:', err.message);
+    throw err;
+  }
 }
 
 process.on('SIGINT', () => {
-  console.log('\n[🛑] Shutting down...');
   disconnect();
   process.exit();
 });
