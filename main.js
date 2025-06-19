@@ -1,5 +1,6 @@
 // main.js (Improved and Structured PurpleBot Backend)
 // PurpleBot by Sanne Karibo
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
@@ -90,14 +91,36 @@ app.get('/api/balance', (req, res) => {
   res.json({ balance });
 });
 
+// ✅ MODIFIED: Return only candles
 app.get('/api/chart-data', async (req, res) => {
-  const indicators = await gatherIndicatorData();
-  res.json({
-    candles: deriv.candles,
-    indicators,
-    activeTrades: Array.from(deriv.openContracts.values()),
-    closedTrades: Array.from(deriv.closedContracts.values())
-  });
+  res.json({ candles: deriv.candles });
+});
+
+// ✅ NEW: Return only indicators
+app.get('/api/indicators', async (req, res) => {
+  try {
+    const indicatorsData = await gatherIndicatorData();
+    res.json({ indicators: indicatorsData });
+  } catch (err) {
+    console.error('Error fetching indicators:', err.message);
+    res.status(500).json({ error: 'Failed to fetch indicators' });
+  }
+});
+
+// ✅ NEW: Return only active trades
+app.get('/api/active-trades', (req, res) => {
+  try {
+    const activeTrades = Array.from(deriv.openContracts.values());
+    res.json({ activeTrades });
+  } catch (err) {
+    console.error('Error fetching active trades:', err.message);
+    res.status(500).json({ error: 'Failed to fetch active trades' });
+  }
+});
+
+// ✅ NEW: Simple health check endpoint
+app.get('/ping', (req, res) => {
+  res.send('🟢 PurpleBot backend is alive and well!');
 });
 
 app.get('/symbol-info', (req, res) => {
