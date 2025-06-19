@@ -232,7 +232,12 @@ function loadSymbols() {
 
 function fetchInitialCandles() {
   return new Promise((resolve, reject) => {
-    send({ candles: getSymbol(), count: COUNT, granularity: GRANULARITY }, (data) => {
+    send({
+      ticks_history: getSymbol(),
+      style: 'candles',
+      granularity: GRANULARITY,
+      count: COUNT
+    }, (data) => {
       if (data.error) return reject(new Error(data.error.message));
       if (!data.candles?.length) return reject(new Error('Empty candle data'));
       candles = data.candles;
