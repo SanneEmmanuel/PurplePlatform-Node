@@ -1,4 +1,4 @@
-// deriv.js (Enhanced & Stable Version)
+// deriv.js (Fully Fixed & Enhanced)
 // PurpleBot by Sanne Karibo
 
 const WebSocket = require('ws');
@@ -166,7 +166,6 @@ async function connect() {
       if (candles?.length) await saveToFile('candles.json', candles);
     }
 
-    // streamCandleUpdates(); ← Skipped, not supported for 'candles'
     streamBalance();
     retries = 0;
   } catch (err) {
@@ -284,10 +283,6 @@ function fetchInitialCandles() {
   });
 }
 
-function streamCandleUpdates() {
-  console.log('[⚠️] Skipping candle subscribe — Deriv does not support it properly.');
-}
-
 function streamBalance() {
   console.log('[📶] Subscribing to balance updates...');
   send({ balance: 1, subscribe: 1 });
@@ -346,7 +341,7 @@ async function getCurrentPrice() {
     console.log(`[🔍] getCurrentPrice → Symbol: ${getSymbol()}`);
     await waitForSocketReady();
     return new Promise((resolve, reject) => {
-      send({ ticks: getSymbol(), subscribe: 0 }, (data) => {
+      send({ ticks: getSymbol() }, (data) => {
         if (data.error) {
           console.error('[❌] getCurrentPrice error:', data.error);
           return reject(new Error(data.error.message));
@@ -407,7 +402,7 @@ process.on('SIGINT', () => {
   process.exit();
 });
 
-connect(); // start at app launch
+connect();
 
 module.exports = {
   candles,
