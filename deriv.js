@@ -1,5 +1,5 @@
-//deriv.js by Sanne Emmanuel Karibo
 // deriv.js
+//logged version
 const WebSocket = require('ws');
 const fs = require('fs').promises;
 require('dotenv').config();
@@ -25,10 +25,12 @@ function setRuntimeConfig(key, value) {
 }
 
 function getSymbol() {
+  console.log(`[ℹ️] Getting current symbol: ${runtimeConfig.SYMBOL}`);
   return runtimeConfig.SYMBOL;
 }
 
 function getToken() {
+  console.log(`[🔑] Getting current API token`);
   return runtimeConfig.API_TOKEN;
 }
 
@@ -48,6 +50,7 @@ let msgId = 1;
 const callbacks = new Map();
 
 async function saveToFile(filename, data) {
+  console.log(`[💾] Attempting to save ${filename}...`);
   try {
     await fs.writeFile(`${TMP_PATH}/${filename}`, JSON.stringify(data, null, 2));
     console.log(`[💾] Saved ${filename}`);
@@ -57,6 +60,7 @@ async function saveToFile(filename, data) {
 }
 
 async function loadFromFile(filename) {
+  console.log(`[📂] Attempting to load ${filename}...`);
   try {
     const content = await fs.readFile(`${TMP_PATH}/${filename}`);
     console.log(`[📂] Loaded ${filename}`);
@@ -82,10 +86,10 @@ function waitForSocketReady(timeout = 10000) {
 function send(payload, cb) {
   payload.req_id = msgId++;
   if (cb) callbacks.set(payload.req_id, cb);
-
+  console.log(`[📤] Preparing to send payload:`, payload);
   if (connection?.readyState === 1) {
     connection.send(JSON.stringify(payload));
-    console.log(`[📤] Sent payload:`, payload);
+    console.log(`[📤] Payload sent.`);
   } else {
     console.warn('[⚠️] Tried to send but WebSocket is not ready');
   }
@@ -101,6 +105,7 @@ function createConnection() {
 }
 
 async function connect() {
+  console.log('[🔌] Attempting connection...');
   if (isConnecting) return;
   isConnecting = true;
 
@@ -163,6 +168,7 @@ async function connect() {
 
 function handleMessage(message) {
   const data = JSON.parse(message);
+  console.log(`[📩] Received message:`, data);
   if (data.req_id && callbacks.has(data.req_id)) {
     const cb = callbacks.get(data.req_id);
     callbacks.delete(data.req_id);
@@ -221,6 +227,7 @@ function handleMessage(message) {
 }
 
 function authorize() {
+  console.log('[🔐] Authorizing...');
   return new Promise((resolve, reject) => {
     const token = getToken();
     if (!token) return reject(new Error('Missing API token'));
@@ -232,6 +239,7 @@ function authorize() {
 }
 
 function loadSymbols() {
+  console.log('[📃] Loading available symbols...');
   return new Promise((resolve) => {
     send({ active_symbols: 'brief', product_type: 'basic' }, (data) => {
       symbolDetails = data.active_symbols;
@@ -242,8 +250,8 @@ function loadSymbols() {
 }
 
 function fetchInitialCandles() {
+  console.log('[📥] Fetching initial candles...');
   return new Promise((resolve, reject) => {
-    console.log(`[📩] Fetching initial candles for ${getSymbol()}`);
     send({
       ticks_history: getSymbol(),
       style: 'candles',
@@ -259,6 +267,7 @@ function fetchInitialCandles() {
 }
 
 function streamCandleUpdates() {
+  console.log('[📶] Subscribing to candle updates...');
   send({
     ticks_history: getSymbol(),
     style: 'candles',
@@ -268,10 +277,12 @@ function streamCandleUpdates() {
 }
 
 function streamBalance() {
+  console.log('[📶] Subscribing to balance updates...');
   send({ balance: 1, subscribe: 1 });
 }
 
 function requestTradeProposal(contractType, amount, duration, durationUnit = 'm') {
+  console.log(`[📝] Requesting trade proposal: ${contractType}, $${amount}, ${duration}${durationUnit}`);
   return new Promise((resolve) => {
     send({
       proposal: 1,
@@ -288,10 +299,12 @@ function requestTradeProposal(contractType, amount, duration, durationUnit = 'm'
 }
 
 function buyContract(proposalId, price) {
+  console.log(`[🛒] Buying contract: ID=${proposalId}, Price=$${price}`);
   send({ buy: 1, price, proposal_id: proposalId });
 }
 
 function trackContract(contractId) {
+  console.log(`[📈] Tracking contract ID: ${contractId}`);
   send({ open_contract: 1, contract_id: contractId, subscribe: 1 });
 }
 
@@ -301,12 +314,14 @@ function disconnect() {
 }
 
 async function reconnectWithNewSymbol(symbol) {
+  console.log(`[🔄] Reconnecting with new symbol: ${symbol}`);
   setRuntimeConfig('SYMBOL', symbol);
   disconnect();
   connect();
 }
 
 async function reconnectWithNewToken(token) {
+  console.log(`[🔄] Reconnecting with new token`);
   setRuntimeConfig('API_TOKEN', token);
   disconnect();
   connect();
