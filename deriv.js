@@ -1,4 +1,5 @@
 const WebSocket = require('ws');
+const fs = require('fs').promises;
 require('dotenv').config();
 
 const DEFAULT_SYMBOL = 'stpRNG';
@@ -6,6 +7,7 @@ const DEFAULT_GRANULARITY = 60;
 const DEFAULT_COUNT = 100;
 const MAX_RETRIES = 5;
 const RETRY_DELAY = 3000;
+const TMP_PATH = '/tmp';
 
 const GRANULARITY = parseInt(process.env.GRANULARITY) || DEFAULT_GRANULARITY;
 const COUNT = parseInt(process.env.CANDLE_COUNT) || DEFAULT_COUNT;
@@ -43,6 +45,26 @@ let isConnecting = false;
 let msgId = 1;
 const callbacks = new Map();
 
+async function saveToFile(filename, data) {
+  try {
+    await fs.writeFile(`${TMP_PATH}/${filename}`, JSON.stringify(data, null, 2));
+    console.log(`[💾] Saved ${filename}`);
+  } catch (err) {
+    console.error(`[❌] Failed to save ${filename}:`, err.message);
+  }
+}
+
+async function loadFromFile(filename) {
+  try {
+    const content = await fs.readFile(`${TMP_PATH}/${filename}`);
+    console.log(`[📂] Loaded ${filename}`);
+    return JSON.parse(content);
+  } catch {
+    console.log(`[📂] No cache found for ${filename}`);
+    return null;
+  }
+}
+
 function send(payload, cb) {
   payload.req_id = msgId++;
   if (cb) callbacks.set(payload.req_id, cb);
@@ -71,7 +93,14 @@ async function connect() {
 
     await authorize();
     console.log('[✅] Authorized');
-    await loadSymbols();
+
+    const loadedSymbols = await loadFromFile('symbols.json');
+    if (loadedSymbols) {
+      availableSymbols = loadedSymbols;
+    } else {
+      await loadSymbols();
+      await saveToFile('symbols.json', availableSymbols);
+    }
 
     if (!availableSymbols.includes(getSymbol())) {
       console.warn(`[⚠️] SYMBOL '${getSymbol()}' is invalid. Falling back to '${DEFAULT_SYMBOL}'`);
@@ -81,7 +110,23 @@ async function connect() {
       console.log(`[✅] SYMBOL '${getSymbol()}' is valid.`);
     }
 
-    await fetchInitialCandles();
+    const loadedCandles = await loadFromFile('candles.json');
+    if (loadedCandles?.length) {
+      candles = loadedCandles;
+      console.log(`[📊] Loaded ${candles.length} candles from cache`);
+    } else {
+      try {
+        await fetchInitialCandles();
+        if (candles?.length) {
+          await saveToFile('candles.json', candles);
+        } else {
+          console.warn('[❌] No candles returned from API');
+        }
+      } catch (err) {
+        console.error('[❌] Error fetching candles:', err.message);
+      }
+    }
+
     streamCandleUpdates();
     streamBalance();
     retries = 0;
@@ -127,11 +172,14 @@ function handleMessage(message) {
 
     case 'candles':
       candles = data.candles;
+      console.log(`[📊] Received ${candles.length} candles from API`);
+      saveToFile('candles.json', candles);
       break;
 
     case 'ohlc':
       candles.push(data.ohlc);
       if (candles.length > COUNT) candles.shift();
+      saveToFile('candles.json', candles);
       break;
 
     case 'active_symbols':
@@ -174,13 +222,22 @@ function authorize() {
 
 function loadSymbols() {
   return new Promise((resolve) => {
-    send({ active_symbols: 'brief', product_type: 'basic' }, () => resolve());
+    send({ active_symbols: 'brief', product_type: 'basic' }, (data) => {
+      symbolDetails = data.active_symbols;
+      availableSymbols = symbolDetails.map(s => s.symbol);
+      resolve();
+    });
   });
 }
 
 function fetchInitialCandles() {
-  return new Promise((resolve) => {
-    send({ candles: getSymbol(), count: COUNT, granularity: GRANULARITY }, () => resolve());
+  return new Promise((resolve, reject) => {
+    send({ candles: getSymbol(), count: COUNT, granularity: GRANULARITY }, (data) => {
+      if (data.error) return reject(new Error(data.error.message));
+      if (!data.candles?.length) return reject(new Error('Empty candle data'));
+      candles = data.candles;
+      resolve();
+    });
   });
 }
 
