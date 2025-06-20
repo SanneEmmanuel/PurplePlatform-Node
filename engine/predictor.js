@@ -1,10 +1,10 @@
 // engine/predictor.js
 // 🔹 PurpleBot Prediction Pipeline: Flash → Core → Reflex
 
-const tf = require('@tensorflow/tfjs-node');
-const fs = require('fs').promises;
-const path = require('path');
-const zlib = require('zlib');
+import * as tf from '@tensorflow/tfjs-node';
+import { promises as fs } from 'fs';
+import path from 'path';
+import zlib from 'zlib';
 
 // Flash Urgency Predictor
 async function flashUrgency(ticks) {
