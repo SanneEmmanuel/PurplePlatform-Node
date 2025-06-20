@@ -2,16 +2,15 @@
 // Trains the Shadow model using historical ticks + echo sequences in 300-tick batches
 // Logs progress to TensorBoard and promotes the model if accuracy improves >15%
 
-const tf = require('@tensorflow/tfjs-node');
-const { getEchoes } = require('../fb');
-const deriv = require('../deriv');
-const {
+import tf from '@tensorflow/tfjs-node';
+import { getEchoes } from '../fb';
+import deriv from '../deriv';
+import {
   generateSynthetic,
   trainModel,
   compareModels,
   saveSparseWeights
-} = require('./libra');
-
+} from './libra';
 /**
  * Split data into overlapping batches of fixed size.
  * @param {Array} data - Input tick data
