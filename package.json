@@ -1,22 +1,30 @@
 {
-  "name": "purplebot-node",
-  "version": "3.0.1",
-  "description": "A real-time trading bot using Deriv API with WebSocket dashboard.",
+  "name": "purplebot",
+  "version": "1.0.0",
+  "description": "Self-evolving AI trading bot using TensorFlow, Firebase, and Deriv API",
   "main": "main.js",
   "scripts": {
-    "start": "node main.js"
+    "start": "node main.js",
+    "train": "node engine/evolver.js",
+    "predict": "node engine/predictor.js"
   },
+  "keywords": ["ai", "trading", "tensorflow", "firebase", "deriv", "nodejs"],
+  "author": "Dr. Sanne Karibo",
+  "license": "MIT",
   "dependencies": {
+    "@tensorflow/tfjs-node": "^4.15.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "firebase-admin": "^11.10.1",
+    "firebase": "^10.7.1",
     "ws": "^8.13.0",
-    "@deriv/deriv-api": "^1.0.15"
+    "uuid": "^9.0.1"
+  },
+  "optionalDependencies": {
+    "google-colab": "*"
   },
   "engines": {
-    "node": ">=14.0.0"
-  },
-  "keywords": ["deriv", "bot", "trading", "websocket", "express", "chart"],
-  "author": "Sanne Karibo",
-  "license": "MIT"
+    "node": ">=18.0.0"
+  }
 }
