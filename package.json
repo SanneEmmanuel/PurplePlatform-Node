@@ -1,30 +1,38 @@
 {
   "name": "purplebot",
   "version": "1.0.0",
-  "description": "Self-evolving AI trading bot using TensorFlow, Firebase, and Deriv API",
+  "description": "PurpleBot by Dr. Sanne Karibo — AI Trading Dashboard with TensorFlow & Deriv API",
   "main": "main.js",
+  "type": "module",
   "scripts": {
     "start": "node main.js",
-    "train": "node engine/evolver.js",
-    "predict": "node engine/predictor.js"
+    "dev": "nodemon main.js"
   },
-  "keywords": ["ai", "trading", "tensorflow", "firebase", "deriv", "nodejs"],
-  "author": "Dr. Sanne Karibo",
-  "license": "MIT",
   "dependencies": {
-    "@tensorflow/tfjs-node": "^4.15.0",
+    "@tensorflow/tfjs-node": "^4.16.0",
+    "axios": "^1.6.8",
+    "chart.js": "^4.4.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "firebase-admin": "^11.10.1",
-    "firebase": "^10.7.1",
-    "ws": "^8.13.0",
-    "uuid": "^9.0.1"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase": "^10.12.0",
+    "ws": "^8.17.0"
   },
-  "optionalDependencies": {
-    "google-colab": "*"
+  "devDependencies": {
+    "nodemon": "^3.1.0"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "keywords": [
+    "trading-bot",
+    "tensorflow",
+    "deriv",
+    "nodejs",
+    "firebase",
+    "websocket",
+    "ai"
+  ],
+  "author": "Dr. Sanne Karibo",
+  "license": "MIT"
 }
