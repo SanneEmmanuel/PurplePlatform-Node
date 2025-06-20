@@ -1,78 +1,80 @@
-// engine/evolver.js
-// 🔹 PurpleBot Evolution Engine: Synthetic Augmentation + Promotion
+// evolver.js - Advanced AI Evolution Engine
+// Trains the Shadow model using historical ticks + echo sequences in 300-tick batches
+// Logs progress to TensorBoard and promotes the model if accuracy improves >15%
 
 const tf = require('@tensorflow/tfjs-node');
-const zlib = require('zlib');
-const { storage, db } = require('../fb');
-const { ref: dbRef, set } = require('firebase/database');
-const { ref: storageRef, listAll, getBytes } = require('firebase/storage');
+const { getEchoes } = require('../fb');
+const deriv = require('../deriv');
 const {
-  trainShadowModel,
-  getSparseWeights,
-  saveSparseModel
+  generateSynthetic,
+  trainModel,
+  compareModels,
+  saveSparseWeights
 } = require('./libra');
 
-// Synthetic Generators
-function timeWarp(ticks, factor = 1.2) {
-  return ticks.filter((_, i) => i % Math.floor(factor) === 0);
-}
-function injectVolatility(ticks, intensity = 0.03) {
-  return ticks.map(t => ({
-    ...t,
-    open: t.open * (1 + (Math.random() - 0.5) * intensity),
-    high: t.high * (1 + (Math.random() - 0.5) * intensity),
-    low: t.low * (1 + (Math.random() - 0.5) * intensity),
-    close: t.close * (1 + (Math.random() - 0.5) * intensity),
-  }));
-}
-function spliceRegimes(t1, t2) {
-  const half = Math.floor(t1.length / 2);
-  return [...t1.slice(0, half), ...t2.slice(half)];
-}
-function generateVariants(original) {
-  const parsed = JSON.parse(zlib.gunzipSync(original));
-  const ticks = parsed.ticks;
-  const outcome = parsed.outcome;
-  return [timeWarp(ticks), injectVolatility(ticks), spliceRegimes(ticks, ticks.slice().reverse())]
-    .map(t => ({ ticks: t, outcome }));
+/**
+ * Split data into overlapping batches of fixed size.
+ * @param {Array} data - Input tick data
+ * @param {number} size - Size of each batch
+ * @returns {Array[]} - Batches
+ */
+function batchTicks(data, size = 300) {
+  const batches = [];
+  for (let i = 0; i <= data.length - size; i += 10) {
+    batches.push(data.slice(i, i + size));
+  }
+  return batches;
 }
 
-// Load Echo Files
-async function loadEchoes(regime = 'volatile') {
-  const folder = storageRef(storage, `echoes/${regime}`);
-  const files = await listAll(folder);
-  return Promise.all(files.items.slice(0, 10).map(f => getBytes(f)));
-}
+/**
+ * evolveModels() - Trains a Shadow model on both Echo Sequences and historical tick batches.
+ * If accuracy exceeds Hunter model by >15%, promotes Shadow to Hunter.
+ * @param {number} totalTicks - Number of historical ticks to fetch
+ * @param {string} regime - Optional regime filter (e.g., 'volatile', 'trending')
+ */
+async function evolveModels(totalTicks = 5000, regime = 'volatile') {
+  console.log(`[🧠] Starting model evolution using ${totalTicks} historical ticks...`);
 
-// Evolve Logic
-async function evolveModels() {
-  console.log('[🔁] Evolving models...');
+  // 🔁 1. Load Echo Sequences (mistake memories)
+  const echoSequences = await getEchoes(regime);
+  console.log(`[📥] Loaded ${echoSequences.length} echo sequences from regime: ${regime}`);
 
-  const echoes = await loadEchoes();
-  const synthetic = echoes.flatMap(buf => generateVariants(buf).map(e => zlib.gzipSync(JSON.stringify(e))));
-  const fullSet = [...echoes, ...synthetic];
+  // 📊 2. Load historical ticks from Deriv
+  const rawTicks = await deriv.getTicksForTraining(totalTicks);
+  const tickBatches = batchTicks(rawTicks, 300);
+  console.log(`[📊] Split ${rawTicks.length} ticks into ${tickBatches.length} batches of 300`);
 
-  const trained = await trainShadowModel(fullSet);
-  const base = tf.sequential();
-  base.add(tf.layers.dense({ units: 32, activation: 'relu', inputShape: [4] }));
-  base.add(tf.layers.dense({ units: 16, activation: 'relu' }));
-  base.add(tf.layers.dense({ units: 1 }));
-  base.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+  // 🧬 3. Synthesize training set from echoes and history
+  const combinedData = [...echoSequences, ...tickBatches];
+  const syntheticSet = generateSynthetic(combinedData);
+  console.log(`[🧪] Generated ${syntheticSet.length} synthetic sequences for training`);
 
-  const sparse = await getSparseWeights(base, trained);
-  await saveSparseModel(sparse, 'shadow');
+  // 🧾 4. Setup TensorBoard logging
+  const logDir = `logs/train_${Date.now()}`;
+  const tensorBoardCallback = tf.node.tensorBoard(logDir);
 
-  const shadowAcc = 0.7 + Math.random() * 0.05;
-  const hunterAcc = 0.6 + Math.random() * 0.05;
+  // 🏋️‍♀️ 5. Train Shadow model with logs
+  const shadowModel = await trainModel(syntheticSet, [tensorBoardCallback]);
+  console.log(`[✅] Training complete. TensorBoard logs saved to ${logDir}`);
 
-  if (shadowAcc > hunterAcc * 1.15) {
-    await saveSparseModel(sparse, 'hunter');
-    await set(dbRef(db, 'bot_state/last_evolution'), { timestamp: Date.now(), promoted: true });
-    console.log('[🚀] Shadow promoted to Hunter');
+  // 📊 6. Evaluate vs current Hunter
+  const improvement = await compareModels(shadowModel, 'hunter');
+  console.log(`[📈] Accuracy improvement over Hunter: ${improvement.toFixed(2)}%`);
+
+  // 👑 7. Promote if qualified
+  if (improvement > 15) {
+    console.log('[🚀] Shadow outperforms Hunter. Promoting...');
+    await saveSparseWeights(shadowModel, 'hunter');
   } else {
-    console.log('[⚠️] Promotion skipped. Shadow not better.');
+    console.log('[🪶] No promotion. Shadow accuracy insufficient.');
   }
 }
 
-if (require.main === module) evolveModels().catch(console.error);
+// CLI support
+if (require.main === module) {
+  const tickArg = parseInt(process.argv[2]) || 5000;
+  const regimeArg = process.argv[3] || 'volatile';
+  evolveModels(tickArg, regimeArg).catch(err => console.error('[❌] Evolution error:', err));
+}
+
 module.exports = { evolveModels };
