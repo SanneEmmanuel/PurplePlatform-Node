@@ -12,7 +12,7 @@ import cors from 'cors';
 
 import deriv from './deriv.js';
 import indicators from './indicators.js';
-import { runPrediction, evolveModels } from './engine/Libra/libra.js';
+import { runPrediction, evolveModels } from './engine/Libra.js';
 
 // Path helpers
 const __filename = fileURLToPath(import.meta.url);
