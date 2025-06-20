@@ -1,5 +1,5 @@
-// main.js (Improved and Structured PurpleBot Backend)
-// PurpleBot by Sanne Karibo
+// main.js (Upgraded for TensorFlow AI Integration)
+// PurpleBot by Dr. Sanne Karibo
 
 const express = require('express');
 const path = require('path');
@@ -11,6 +11,8 @@ const cors = require('cors');
 
 const deriv = require('./deriv');
 const indicators = require('./indicators');
+const { runPrediction } = require('./engine/predictor');
+const { evolveModels } = require('./engine/evolver');
 
 dotenv.config();
 
@@ -19,17 +21,13 @@ const server = http.createServer(app);
 const wss = new Server({ server });
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Runtime state
 let tradingInterval = null;
 let isBotTrading = false;
-let lastProposal = null;
 const TRADE_INTERVAL = 10000;
-const MAX_TRADES = 5;
 
 wss.on('connection', (socket) => {
   console.log('[🌐] WebSocket client connected');
@@ -79,16 +77,27 @@ app.get('/api/status', (req, res) => {
   res.json({ trading: isBotTrading, openContracts: deriv.openContracts.size });
 });
 
-app.get('/api/account-info', (req, res) => {
-  const info = deriv.getAccountInfo();
-  if (!info || !info.loginid) return res.status(404).json({ error: 'Unauthorized' });
-  res.json(info);
+// 🔮 AI Prediction Endpoint
+app.get('/api/predict', async (req, res) => {
+  try {
+    const ticks = await deriv.getTicksForTraining(300);
+    const result = await runPrediction(ticks);
+    res.json(result);
+  } catch (err) {
+    console.error('[❌] Prediction error:', err.message);
+    res.status(500).json({ error: 'Prediction failed' });
+  }
 });
 
-app.get('/api/balance', (req, res) => {
-  const balance = deriv.getAccountBalance();
-  if (balance == null) return res.status(202).json({ message: 'Balance loading' });
-  res.json({ balance });
+// 🧬 Model Training Trigger
+app.post('/api/train', async (req, res) => {
+  try {
+    await evolveModels();
+    res.json({ message: 'Training complete' });
+  } catch (err) {
+    console.error('[❌] Training error:', err.message);
+    res.status(500).json({ error: 'Training failed' });
+  }
 });
 
 app.get('/api/chart-data', async (req, res) => {
@@ -105,40 +114,6 @@ app.get('/api/indicators', async (req, res) => {
   }
 });
 
-app.get('/api/active-trades', (req, res) => {
-  try {
-    const activeTrades = Array.from(deriv.openContracts.values());
-    res.json({ activeTrades });
-  } catch (err) {
-    console.error('Error fetching active trades:', err.message);
-    res.status(500).json({ error: 'Failed to fetch active trades' });
-  }
-});
-
-app.get('/ping', (req, res) => {
-  res.send('🟢 PurpleBot backend is alive and well!');
-});
-
-app.get('/symbol-info', (req, res) => {
-  res.json({
-    currentSymbol: deriv.getCurrentSymbol(),
-    availableSymbols: deriv.getAvailableSymbols(),
-    symbolDetails: deriv.getSymbolDetails()
-  });
-});
-
-app.post('/set-symbol', async (req, res) => {
-  const { symbol } = req.body;
-  if (!symbol) return res.status(400).json({ error: 'Missing symbol' });
-  const validSymbols = deriv.getAvailableSymbols();
-  if (!validSymbols.includes(symbol)) return res.status(400).json({ error: 'Invalid symbol' });
-  await updateEnv('SYMBOL', symbol);
-  deriv.reconnectWithNewSymbol(symbol);
-  res.json({ message: 'Symbol updated' });
-});
-
-// ✅ NEW ENDPOINTS for real-time/tick data:
-
 app.get('/api/current-price', async (req, res) => {
   try {
     const price = await deriv.getCurrentPrice();
@@ -146,16 +121,6 @@ app.get('/api/current-price', async (req, res) => {
   } catch (err) {
     console.error('Error fetching current price:', err.message);
     res.status(500).json({ error: 'Failed to fetch current price' });
-  }
-});
-
-app.get('/api/last-100-ticks', async (req, res) => {
-  try {
-    const ticks = await deriv.getLast100Ticks();
-    res.json({ ticks, symbol: deriv.getCurrentSymbol() });
-  } catch (err) {
-    console.error('Error fetching ticks:', err.message);
-    res.status(500).json({ error: 'Failed to fetch last 100 ticks' });
   }
 });
 
@@ -170,21 +135,6 @@ app.get('/api/ticks-for-training', async (req, res) => {
   }
 });
 
-// === Helper Functions ===
-
-async function updateEnv(key, value) {
-  const envPath = path.join(__dirname, '.env');
-  let content = '';
-  try {
-    content = await fs.readFile(envPath, 'utf8');
-  } catch {}
-  const lines = content.split('\n').filter(Boolean);
-  const updated = lines.map(line => (line.startsWith(key + '=') ? `${key}=${value}` : line));
-  if (!lines.some(line => line.startsWith(key + '='))) updated.push(`${key}=${value}`);
-  await fs.writeFile(envPath, updated.join('\n'));
-  process.env[key] = value;
-}
-
 async function gatherIndicatorData() {
   const ema20 = await indicators.calculateEMA(deriv.candles, 20);
   const rsi7 = await indicators.calculateRSI(deriv.candles, 7);
@@ -193,38 +143,27 @@ async function gatherIndicatorData() {
 }
 
 async function tradingLoop() {
-  const candles = deriv.candles;
-  if (!candles || candles.length < 20) return;
+  try {
+    const ticks = await deriv.getTicksForTraining(300);
+    const result = await runPrediction(ticks);
 
-  const ema20 = indicators.calculateEMA(candles, 20);
-  const rsi7 = indicators.calculateRSI(candles, 7);
-  const lastCandle = candles.at(-1);
-  const prevCandle = candles.at(-2);
+    if (result?.action === 'TRADE') {
+      const { direction, size, tp } = result.reflex;
+      const contractType = direction > 0 ? 'CALL' : 'PUT';
+      const proposal = await deriv.requestTradeProposal(contractType, size * 10, 5);
 
-  if (!lastCandle || !prevCandle || !ema20 || !rsi7) return;
-  const openBuys = Array.from(deriv.openContracts.values()).filter(c => c.contract_type === 'CALL');
-  const openSells = Array.from(deriv.openContracts.values()).filter(c => c.contract_type === 'PUT');
-
-  if (rsi7.at(-2) > 55 && prevCandle.close > ema20.at(-2) && openBuys.length < MAX_TRADES) {
-    console.log('[📈] BUY Signal Detected');
-    const proposal = await deriv.requestTradeProposal('CALL', 10, 5);
-    if (proposal?.proposal?.id) {
-      await deriv.buyContract(proposal.proposal.id, proposal.proposal.ask_price);
-      console.log('[✅] Executed CALL Contract');
+      if (proposal?.proposal?.id) {
+        await deriv.buyContract(proposal.proposal.id, proposal.proposal.ask_price);
+        console.log(`[✅] Executed ${contractType} based on reflex AI`);
+      }
+    } else {
+      console.log('[⌛] Waiting — no urgent prediction.');
     }
-  }
-
-  if (rsi7.at(-2) < 45 && prevCandle.close < ema20.at(-2) && openSells.length < MAX_TRADES) {
-    console.log('[📉] SELL Signal Detected');
-    const proposal = await deriv.requestTradeProposal('PUT', 10, 5);
-    if (proposal?.proposal?.id) {
-      await deriv.buyContract(proposal.proposal.id, proposal.proposal.ask_price);
-      console.log('[✅] Executed PUT Contract');
-    }
+  } catch (err) {
+    console.error('[❌] Error in trading loop:', err.message);
   }
 }
 
-// Start Server
 server.listen(PORT, () => {
   console.log(`[✅] PurpleBot backend running at http://localhost:${PORT}`);
 });
