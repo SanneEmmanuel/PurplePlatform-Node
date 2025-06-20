@@ -1,24 +1,28 @@
-// main.js (Upgraded for TensorFlow AI Integration)
+// main.js (ESM-Compatible & Libra-Ready)
 // PurpleBot by Dr. Sanne Karibo
 
-const express = require('express');
-const path = require('path');
-const fs = require('fs').promises;
-const dotenv = require('dotenv');
-const http = require('http');
-const { Server } = require('ws');
-const cors = require('cors');
+import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { promises as fs } from 'fs';
+import dotenv from 'dotenv';
+import http from 'http';
+import { Server as WebSocketServer } from 'ws';
+import cors from 'cors';
 
-const deriv = require('./deriv');
-const indicators = require('./indicators');
-const { runPrediction } = require('./engine/predictor');
-const { evolveModels } = require('./engine/evolver');
+import deriv from './deriv.js';
+import indicators from './indicators.js';
+import { runPrediction, evolveModels } from './engine/Libra/libra.js';
+
+// Path helpers
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const wss = new Server({ server });
+const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
@@ -77,7 +81,6 @@ app.get('/api/status', (req, res) => {
   res.json({ trading: isBotTrading, openContracts: deriv.openContracts.size });
 });
 
-// 🔮 AI Prediction Endpoint
 app.get('/api/predict', async (req, res) => {
   try {
     const ticks = await deriv.getTicksForTraining(300);
@@ -89,7 +92,6 @@ app.get('/api/predict', async (req, res) => {
   }
 });
 
-// 🧬 Model Training Trigger
 app.post('/api/train', async (req, res) => {
   try {
     await evolveModels();
@@ -100,7 +102,7 @@ app.post('/api/train', async (req, res) => {
   }
 });
 
-app.get('/api/chart-data', async (req, res) => {
+app.get('/api/chart-data', (req, res) => {
   res.json({ candles: deriv.candles });
 });
 
