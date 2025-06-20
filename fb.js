@@ -1,20 +1,36 @@
-// fb.js
-const { initializeApp } = require('firebase/app');
-const { getDatabase } = require('firebase/database');
-const { getStorage } = require('firebase/storage');
+// fb.js - Firebase Interface for PurpleBot (Node.js version)
 
-const config = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-  databaseURL: process.env.FIREBASE_DB_URL
+const { initializeApp } = require('firebase/app');
+const { getFirestore, doc, setDoc, getDoc, collection, addDoc, getDocs } = require('firebase/firestore');
+const { getStorage, ref, uploadBytes, getDownloadURL } = require('firebase/storage');
+
+// 🔐 Your Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyD8KI5x8uvqyvmBDxNp7kmfkz9LJeYo49Q",
+  authDomain: "libra-e615f.firebaseapp.com",
+  projectId: "libra-e615f",
+  storageBucket: "libra-e615f.appspot.com",
+  messagingSenderId: "93883554914",
+  appId: "1:93883554914:web:1aa7c95dc991184bd0053b"
 };
 
-const app = initializeApp(config);
+// 🚀 Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+// 📤 Expose commonly used Firebase functions
 module.exports = {
-  db: getDatabase(app),
-  storage: getStorage(app)
+  app,
+  db,
+  storage,
+  ref,
+  doc,
+  setDoc,
+  getDoc,
+  collection,
+  addDoc,
+  getDocs,
+  uploadBytes,
+  getDownloadURL
 };
