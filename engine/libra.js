@@ -1,14 +1,14 @@
 // engine/libra.js
 // 🔹 PurpleBot AI Core: Echo Storage, Regime Detection, Shadow Training
 
-const tf = require('@tensorflow/tfjs-node');
-const zlib = require('zlib');
-const path = require('path');
-const fs = require('fs').promises;
+import * as tf from '@tensorflow/tfjs-node';
+import zlib from 'zlib';
+import path from 'path';
+import { promises as fs } from 'fs';
 
-const { storage, db } = require('../fb');
-const { ref: dbRef, set } = require('firebase/database');
-const { ref: storageRef, uploadBytes } = require('firebase/storage');
+import { storage, db } from '../fb';
+import { ref as dbRef, set } from 'firebase/database';
+import { ref as storageRef, uploadBytes } from 'firebase/storage';
 
 // 📊 Market Regime Classifier
 function classifyMarket(ticks) {
