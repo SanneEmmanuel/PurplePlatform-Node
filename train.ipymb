@@ -1,0 +1,23 @@
+# 🧠 PurpleBot AI Evolution Notebook
+# Compatible with: https://github.com/SanneEmmanuel/PurplePlatform-Node
+
+# ⚙️ Step 1: Install Node.js, npm, and Git
+!apt-get update -y
+!apt-get install -y nodejs npm git
+
+# 🚀 Step 2: Clone your PurplePlatform-Node repository
+!git clone https://github.com/SanneEmmanuel/PurplePlatform-Node.git
+%cd PurplePlatform-Node
+
+# 📦 Step 3: Install Node.js dependencies
+!npm install
+
+# 📊 Step 4: Launch TensorBoard for training log monitoring
+%load_ext tensorboard
+!rm -rf logs  # Clean previous logs
+%tensorboard --logdir logs --host 0.0.0.0 --port 6006 &
+
+# 🏋️ Step 5: Run the evolution training script
+# Usage: node engine/evolver.js <tick_count> <regime>
+# Example below uses 10,000 ticks and trains on 'volatile' regime data
+!node engine/evolver.js 10000 volatile
