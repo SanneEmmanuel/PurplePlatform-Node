@@ -3,9 +3,9 @@
 // Author: Dr. Sanne Karibo
 
 // 🔗 Dependencies (ESM)
-import firebase from 'firebase/app';
-import 'firebase/firestore';
-import 'firebase/storage';
+import { initializeApp, getApps } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 import * as tf from '@tensorflow/tfjs-node';
 import zlib from 'zlib';
@@ -17,7 +17,8 @@ import { readFile, access } from 'fs/promises';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 🔐 Firebase Configuration
+// 🔐 Firebase Configuration (Modular)
+
 const firebaseConfig = {
   apiKey: "AIzaSyD8KI5x8uvqyvmBDxNp7kmfkz9LJeYo49Q",
   authDomain: "libra-e615f.firebaseapp.com",
@@ -27,9 +28,9 @@ const firebaseConfig = {
   appId: "1:93883554914:web:1aa7c95dc991184bd0053b"
 };
 
-const app = firebase.apps?.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore(app);
-const storage = firebase.storage(app);
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
 
 // ========================
 // 📊 Genius Market Classifier
