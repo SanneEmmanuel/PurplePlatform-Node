@@ -1,29 +1,16 @@
 // engine/libra.js
+// 🔹 PurpleBot AI Core: Echo Storage, Regime Detection, Shadow Training
+
 const tf = require('@tensorflow/tfjs-node');
 const zlib = require('zlib');
 const path = require('path');
 const fs = require('fs').promises;
 
-const { initializeApp } = require('firebase/app');
-const { getStorage, ref: storageRef, uploadBytes } = require('firebase/storage');
-const { getDatabase, ref: dbRef, set } = require('firebase/database');
+const { storage, db } = require('../fb');
+const { ref: dbRef, set } = require('firebase/database');
+const { ref: storageRef, uploadBytes } = require('firebase/storage');
 
-// --- 🔧 Firebase Configuration ---
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-  databaseURL: process.env.FIREBASE_DB_URL
-};
-
-const app = initializeApp(firebaseConfig);
-const storage = getStorage(app);
-const db = getDatabase(app);
-
-// --- 📊 1. Market Regime Classifier ---
+// 📊 Market Regime Classifier
 function classifyMarket(ticks) {
   const prices = ticks.map(t => t.quote);
   const diff = prices.slice(1).map((p, i) => p - prices[i]);
@@ -35,11 +22,26 @@ function classifyMarket(ticks) {
   return 'ranging';
 }
 
-// --- 🧠 2. Shadow Model Trainer ---
-async function trainShadowModel(echoes) {
+// 💾 Echo Sequence Storage
+async function storeEcho(ticks, regime, outcome) {
+  const compressed = zlib.gzipSync(JSON.stringify({ ticks, outcome }));
+  const filePath = `echoes/${regime}/${Date.now()}.bin`;
+
+  const fileRef = storageRef(storage, filePath);
+  await uploadBytes(fileRef, compressed);
+
+  await set(dbRef(db, `echoes_meta/${Date.now()}`), {
+    regime, outcome, count: ticks.length
+  });
+
+  console.log(`[🧬] Echo stored → ${filePath}`);
+}
+
+// 🧠 Shadow Model Trainer
+async function trainShadowModel(echoBuffers) {
   const inputs = [], labels = [];
 
-  for (const echo of echoes) {
+  for (const echo of echoBuffers) {
     const parsed = JSON.parse(zlib.gunzipSync(echo));
     const ticks = parsed.ticks;
     const features = ticks.map(t => [t.open, t.high, t.low, t.close]);
@@ -62,11 +64,10 @@ async function trainShadowModel(echoes) {
   console.log('[🧠] Training Shadow model...');
   await model.fit(inputTensor, labelTensor, { epochs: 20, batchSize: 32, verbose: 0 });
 
-  console.log('[✅] Shadow training complete.');
   return model;
 }
 
-// --- 🧪 3. Sparse Weight Extractor ---
+// 🧪 Sparse Weight Extractor
 async function getSparseWeights(baseModel, trainedModel) {
   const baseWeights = baseModel.getWeights();
   const newWeights = trainedModel.getWeights();
@@ -90,38 +91,22 @@ async function getSparseWeights(baseModel, trainedModel) {
   return deltas;
 }
 
-// --- 🧾 4. Save Sparse Model to Firebase ---
+// 🧾 Upload Sparse Weights
 async function saveSparseModel(deltas, modelName = 'shadow') {
   const payload = JSON.stringify(deltas);
   const compressed = zlib.gzipSync(payload);
-  const filename = `models/${modelName}/weights_sparse_${Date.now()}.bin`;
+  const filename = `models/${modelName}/weights_sparse_latest.bin`;
 
   const fileRef = storageRef(storage, filename);
   await uploadBytes(fileRef, compressed);
 
-  console.log(`[💾] Sparse model uploaded as: ${filename}`);
+  console.log(`[💾] Saved ${modelName} model to Firebase`);
 }
 
-// --- 🔐 5. Echo Sequence Recorder ---
-async function storeEcho(ticks, regime, outcome) {
-  const compressed = zlib.gzipSync(JSON.stringify({ ticks, outcome }));
-  const filePath = `echoes/${regime}/${Date.now()}.bin`;
-
-  const fileRef = storageRef(storage, filePath);
-  await uploadBytes(fileRef, compressed);
-
-  await set(dbRef(db, `echoes_meta/${Date.now()}`), {
-    regime, outcome, count: ticks.length
-  });
-
-  console.log(`[🧬] Echo stored under ${regime} → ${filePath}`);
-}
-
-// --- 🌐 Exports ---
 module.exports = {
   classifyMarket,
+  storeEcho,
   trainShadowModel,
   getSparseWeights,
-  saveSparseModel,
-  storeEcho
+  saveSparseModel
 };
