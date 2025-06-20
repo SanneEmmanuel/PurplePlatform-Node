@@ -170,4 +170,15 @@ export async function runPrediction(ticks) {
 // 📦 Module Export: Firebase + Core
 // ========================
 
-export { app, db, storage };
+// ========================
+// 📦 Module Export: Firebase + Core + Model
+// ========================
+
+export {
+  app,
+  db,
+  storage,
+  buildModel
+};
+
+
