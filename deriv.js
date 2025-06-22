@@ -317,15 +317,40 @@ async function getLast100Ticks() {
 }
 
 async function getTicksForTraining(count) {
+  if (count < 1) throw new Error('Count must be >= 1');
   await waitForSocketReady();
-  if (count < 1 || count > 10000) throw new Error('Count must be between 1 and 10000');
-  return new Promise((resolve, reject) => {
-    send({ ticks_history: getSymbol(), count, end: 'latest', style: 'ticks' }, (data) => {
-      if (data.error) return reject(new Error(data.error.message));
-      resolve(data.history?.prices || []);
+
+  const allTicks = [];
+  const chunkSize = 10000;
+  let remaining = count;
+  let end = Math.floor(Date.now() / 1000); // current UTC time in seconds
+
+  while (remaining > 0) {
+    const currentCount = Math.min(remaining, chunkSize);
+    const start = end - currentCount;
+
+    const chunk = await new Promise((resolve, reject) => {
+      send({
+        ticks_history: getSymbol(),
+        start,
+        end,
+        style: 'ticks'
+      }, (data) => {
+        if (data.error) return reject(new Error(data.error.message));
+        resolve(data.history?.prices || []);
+      });
     });
-  });
+
+    if (!chunk.length) break; // prevent infinite loop
+    allTicks.unshift(...chunk); // prepend for chronological order
+
+    remaining -= chunk.length;
+    end = start; // step backward in time
+  }
+
+  return allTicks.slice(-count); // enforce exact count
 }
+
 
 process.on('SIGINT', () => {
   disconnect();
