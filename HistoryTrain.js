@@ -1,66 +1,54 @@
-// HistoryTrain.js - Smart Historical Trainer with Evolution
-// Author: Dr. Sanne Karibo
-
-import { getTicksForTraining } from '../deriv.js';
+import { getTicksForTraining } from './deriv.js';
 import { trainShadowModel, getSparseWeights, loadSparseWeights, buildModel, storage } from './engine/Libra.js';
 import zlib from 'zlib';
-import fs from 'fs/promises';
-import path from 'path';
 
 function toEchoBuffer(candles) {
-  const echo = {
-    ticks: candles.map(c => ({
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close
-    }))
-  };
-  return zlib.gzipSync(JSON.stringify(echo));
+  return zlib.gzipSync(JSON.stringify({
+    ticks: candles.map(c => ({ open: c.open, high: c.high, low: c.low, close: c.close }))
+  }));
 }
 
 async function getLargeHistoricalChunks(chunkSize = 300, total = 3000) {
-  const allCandles = await getTicksForTraining(total); // assumed to return [{open, high, low, close}]
-  const echoBuffers = [];
-
-  for (let i = 0; i < allCandles.length; i += chunkSize) {
-    const chunk = allCandles.slice(i, i + chunkSize);
-    if (chunk.length === chunkSize) {
-      echoBuffers.push(toEchoBuffer(chunk));
-    }
+  const all = await getTicksForTraining(total);
+  const buffers = [];
+  for (let i = 0; i < all.length; i += chunkSize) {
+    const chunk = all.slice(i, i + chunkSize);
+    if (chunk.length === chunkSize) buffers.push(toEchoBuffer(chunk));
   }
-
-  return echoBuffers;
+  return buffers;
 }
 
-async function saveSparseToFirebase(deltas, modelType = 'hunter') {
-  const fileName = `weights_sparse_latest.bin`;
-  const compressed = zlib.gzipSync(JSON.stringify(deltas));
-  const ref = storage.ref().child(`model/${modelType}/${fileName}`);
-  await ref.put(compressed);
-  console.log(`[☁️] Sparse weights uploaded to Firebase as '${fileName}'`);
+async function saveSparseToFirebase(deltas) {
+  const fileName = 'weights_sparse_latest.bin';
+  const data = zlib.gzipSync(JSON.stringify(deltas));
+
+  const bucket = storage.bucket(); // ✅ Admin SDK usage
+  const file = bucket.file(`model/hunter/${fileName}`);
+
+  await file.save(data, {
+    metadata: {
+      contentType: 'application/octet-stream'
+    }
+  });
+
+  console.log('[☁️] Uploaded sparse weights to Firebase');
 }
 
 async function main() {
-  try {
-    console.log('[📦] Fetching historical candle data...');
-    const echoBuffers = await getLargeHistoricalChunks(300, 3000);
+  console.log('[📦] Fetching history...');
+  const buffers = await getLargeHistoricalChunks(300, 3000);
 
-    const baseModel = buildModel();
-    await loadSparseWeights(baseModel, 'hunter');
+  const base = buildModel();
+  await loadSparseWeights(base, 'hunter');
 
-    console.log(`[🧠] Training on ${echoBuffers.length} echo buffers...`);
-    const trainedModel = await trainShadowModel(echoBuffers);
+  console.log(`[🧠] Training on ${buffers.length} batches...`);
+  const trained = await trainShadowModel(buffers);
 
-    console.log('[🧬] Comparing with base weights to generate sparse deltas...');
-    const sparse = await getSparseWeights(baseModel, trainedModel);
+  console.log('[🧬] Computing sparse deltas...');
+  const deltas = await getSparseWeights(base, trained);
 
-    await saveSparseToFirebase(sparse, 'hunter');
-
-    console.log('[✅] Model improved and saved. Ready for smarter predictions.');
-  } catch (err) {
-    console.error('[❌] Training failed:', err.message);
-  }
+  await saveSparseToFirebase(deltas);
+  console.log('[✅] Done – model smarter than before!');
 }
 
-main();
+main().catch(e => console.error('[❌]', e));
