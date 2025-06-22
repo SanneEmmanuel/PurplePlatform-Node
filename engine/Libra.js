@@ -1,4 +1,4 @@
-// libra.js - Advanced AI Core (Firebase Admin SDK Version)
+// libra.js - Advanced AI Core (Firebase AserviceAccouon)
 // Author: Dr. Sanne Karibo - PurpleBot AI (Smarter DNN Version)
 
 import admin from 'firebase-admin';
@@ -11,8 +11,6 @@ import { readFile, access } from 'fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const serviceAccount = {
 
 if (!admin.apps.length) admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
