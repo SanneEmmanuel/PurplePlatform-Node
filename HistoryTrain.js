@@ -1,5 +1,5 @@
-// HistoryTrain.js - PurpleBot Model Trainer
-// Author: Dr. Sanne Karibo
+// HistoryTrain.js - Full-Day AI Training with Echo Upload
+// Author: Dr. Sanne Karibo – PurpleBot AI Core
 
 import { getTicksForTraining } from './deriv.js';
 import {
@@ -7,10 +7,16 @@ import {
   getSparseWeights,
   loadSparseWeights,
   buildModel,
-  bucket
+  storage
 } from './engine/Libra.js';
 
 import zlib from 'zlib';
+import fs from 'fs';
+import path from 'path';
+
+const SECONDS_IN_A_DAY = 86400;
+const CHUNK_SIZE = 300;
+const today = new Date().toISOString().split('T')[0];
 
 // 🧠 Convert raw candles into gzip-compressed Echo buffer
 function toEchoBuffer(candles) {
@@ -25,7 +31,7 @@ function toEchoBuffer(candles) {
 }
 
 // ⛏️ Slice historical data into Echo training chunks
-async function getLargeHistoricalChunks(chunkSize = 300, total = 3000) {
+async function getLargeHistoricalChunks(chunkSize = CHUNK_SIZE, total = SECONDS_IN_A_DAY) {
   const all = await getTicksForTraining(total);
   const buffers = [];
 
@@ -39,37 +45,66 @@ async function getLargeHistoricalChunks(chunkSize = 300, total = 3000) {
   return buffers;
 }
 
-// ☁️ Upload sparse delta weights to Firebase Cloud Storage
-async function saveSparseToFirebase(deltas) {
-  const fileName = 'weights_sparse_latest.bin';
-  const data = zlib.gzipSync(JSON.stringify(deltas));
-  const file = bucket.file(`model/hunter/${fileName}`);
-
-  await file.save(data, {
-    metadata: {
-      contentType: 'application/octet-stream'
+// ☁️ Upload Echo buffers to Firebase Cloud Storage
+async function uploadEchoes(buffers) {
+  const basePath = `echoes/${today}`;
+  for (let i = 0; i < buffers.length; i++) {
+    const file = storage.file(`${basePath}/echo_${i}.bin`);
+    const [exists] = await file.exists();
+    if (!exists) {
+      await file.save(buffers[i], {
+        metadata: { contentType: 'application/octet-stream' }
+      });
+      console.log(`[📡] Uploaded Echo ${i + 1}/${buffers.length}`);
+    } else {
+      console.log(`[⏭️] Echo ${i + 1} already exists — skipping`);
     }
-  });
-
-  console.log('[☁️] Uploaded sparse weights to Firebase');
+  }
 }
 
-// 🚀 Main execution: Train Shadow, compute sparse, upload
+// ☁️ Upload sparse delta weights to Firebase Cloud Storage
+async function saveSparseToFirebase(deltas) {
+  const file = storage.file(`model/hunter/weights_sparse_latest.bin`);
+  const compressed = zlib.gzipSync(JSON.stringify(deltas));
+  await file.save(compressed, {
+    metadata: { contentType: 'application/octet-stream' }
+  });
+  console.log('[☁️] Sparse weights uploaded to Firebase');
+}
+
+// 📂 Ensure local model path exists
+function ensureLocalModelPath() {
+  const dir = path.resolve('model/hunter');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log('[📁] Created model directory:', dir);
+  }
+}
+
+// 🚀 Main Execution
 async function main() {
-  console.log('[📦] Fetching history...');
-  const buffers = await getLargeHistoricalChunks(300, 3000);
+  console.time('[⏱️] Total Training Time');
+  console.log(`[📦] Fetching ${SECONDS_IN_A_DAY} ticks from history...`);
+
+  const buffers = await getLargeHistoricalChunks(CHUNK_SIZE, SECONDS_IN_A_DAY);
+  console.log(`[🔩] ${buffers.length} Echo chunks prepared`);
+
+  ensureLocalModelPath();
+  await uploadEchoes(buffers);
 
   const base = buildModel();
   await loadSparseWeights(base, 'hunter');
 
-  console.log(`[🧠] Training on ${buffers.length} batches...`);
+  console.log('[🧠] Training model on Echo buffers...');
   const trained = await trainShadowModel(buffers);
 
-  console.log('[🧬] Computing sparse deltas...');
+  console.log('[🧬] Calculating sparse deltas...');
   const deltas = await getSparseWeights(base, trained);
 
   await saveSparseToFirebase(deltas);
-  console.log('[✅] Done – model smarter than before!');
+
+  console.timeEnd('[⏱️] Total Training Time');
+  console.log('[✅] Training completed successfully');
 }
 
-main().catch(e => console.error('[❌]', e));
+main().catch(e => console.error('[❌] Training Error:', e));
