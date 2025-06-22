@@ -163,6 +163,5 @@ export async function runPrediction(ticks) {
 // ========================
 export {
   db,
-  bucket,
-  buildModel
+  bucket
 };
