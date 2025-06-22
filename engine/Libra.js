@@ -11,7 +11,20 @@ import { readFile, access } from 'fs/promises';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const serviceAccount = { /* REDACTED */ };
+const serviceAccount = {
+  "type": "service_account",
+  "project_id": "libra-e615f",
+  "private_key_id": "6ab1600023c604ec56648d58a63f4c3eb8492aae",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCi3T30udNCqai0\nbtTGKo9dGPA4aNApiV4ucuorcRBUUCb0uWilhRJ9duN6Io7dPsbyZwVLbjTKJqIx\nBLeUv6wz/lQrjOcVhifk1WDvEdHbXdwY4fmj0f8P94VPkhizCIEirXC/ok1biDBQ\nA7QLlCHqRB0OVMoooRN9H+OKC5Ue2Qa9y8VuJjx5wHYpSQGubDnM5cow7/uF2sgc\nPbWNGuGxkMZk3d6JM9MPRfMPDBosqcxXkp9DdHx6pbS6UydIketL8mKIpA3NqTXf\nMDm9yfIcmi3pNuPhyXtYsm3Y0eMLPZQgUbTJjv8no1pTxDLR6++yOO3WXzz5cUlI\ngRWGdDMXAgMBAAECggEAEbAAcgsaaAN/+HSO9CScJEq4kA/GB7TM/zNoviYN1XJN\nAMgAFvXQT8LxKosFQ/704U+R8iK6ZffzJmqyO1vjqlPlNUOctyg2PfJ0kBI53d6g\nMC2ejI2aa1QA7ObbetoiGC+I7q8EQrwULyRv0dAZLNWP6EYKHIZ91Nl5Pz1JySsx\nI3Do8C76FCNgUR7In1sK4RFmdoR+qZG7vWptOxJQTyj1LiUiOvbhe1ex7DSuYJwW\nAj+ICJcprjc158OtNrTBhoXxkmy++bE5fya+64S3nbU3cq3CTfP2PmWDkdYwWYq3\nF5i7Y/3VYP8ApfGSzYemk6DPFAR73eC5+JcAvg4ZrQKBgQDj1xbbLUZ+2lsClBac\nfStjIr44SSOH5JLyxdugSBfTGGaeuSndC3e3CKA7YUMsCbd1P18q9BOAqKCI4X5a\nLuIIDimZyNFpIWGeLtuzcXzBqo8cd5fB0ptCKS3nwNh8OHxJr2/M3N6WfV6GcPGj\nTjqTiXdaksu+Jnp46Cgbm/UOewKBgQC2/ky9Lrs5XYXp+HbMDhIpee4J3FOTZ7fT\nWpXaccpEsdQyrFJACRHSiTQj1lWvz+FuXyC5GAkWPjcEpKOiVsd9+3YE5FrEPKD3\nJsfxPQvZXtMULl9hhEOG8+2M+AaPIn45ZicEsNAVQx4oQAry9huRmN8dgxMqt/eO\nhrCnS9AZFQKBgGANdKBQNREToxyyK9orVthDdGgsRWNr9JuO2Gl5GzouZkzyCPkc\ndYrfgxWlinkNW599aPSl03cBIDS0w9znOPlmZxljNQ2aOhpC7PJ4nLzU1+KLdJoM\n3NGGpMi4X0v3UEaMRJjcYKaXEfuhr+1F9KHwaTXw/x4aALXqQcZp+GTzAoGALjgy\n18G65jVaAouQLeAL9E/osLLmpR+YTZjeqqr9BLbJuvbNW4Eu8DdZZQfY4qwl60O5\ntyZ7/RM/wDt5XSKABrEB0SCAUHpjyakQ7TyXBpMtyzYfPzkx+R8ZS/bFaVez+/ly\nN3wVQpmOP2pVmaJRukebaw/VQn/u1h/s9IRwjjUCgYBDmd9AK0XtJkUhZzgHh+tx\nCbXyqR8kUFYaZJY/dn3G69T4HzKlOWZ/YNWHIzoMxcu9HWFXmqurf4MnCj62749W\n49tZfZ2wo+QJYeWqzwwKjr/DiaLLx/OuWB3LItY40bN/dmMLFS0QAZyXrW/lQgnE\nvoDQ5C1Mq1/d851akPJcTQ==\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@libra-e615f.iam.gserviceaccount.com",
+  "client_id": "107473235074187241822",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40libra-e615f.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+};
+
 if (!admin.apps.length) admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   storageBucket: 'libra-e615f.appspot.com'
