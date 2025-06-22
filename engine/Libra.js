@@ -1,11 +1,11 @@
-// libra.js Version3
-//- PurpleBot AI Core (ESM + Genius Enhancements)
+// libra.js - PurpleBot AI Core (Admin SDK + Genius Enhancements)
 // Author: Dr. Sanne Karibo
 
-// 🔗 Dependencies (ESM)
-import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+// 🔗 Dependencies (ESM + Admin SDK)
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import serviceAccount from './serviceAccountKey.json' assert { type: 'json' };
 
 import * as tf from '@tensorflow/tfjs-node';
 import zlib from 'zlib';
@@ -13,29 +13,23 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { readFile, access } from 'fs/promises';
 
-// 🔁 Path helpers for __dirname in ESM
+// 🔁 __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 🔐 Firebase Configuration (Modular)
+// 🔐 Firebase Admin Initialization
+initializeApp({
+  credential: cert(serviceAccount),
+  storageBucket: 'libra-e615f.appspot.com'
+});
 
-const firebaseConfig = {
-  apiKey: "AIzaSyD8KI5x8uvqyvmBDxNp7kmfkz9LJeYo49Q",
-  authDomain: "libra-e615f.firebaseapp.com",
-  projectId: "libra-e615f",
-  storageBucket: "libra-e615f.appspot.com",
-  messagingSenderId: "93883554914",
-  appId: "1:93883554914:web:1aa7c95dc991184bd0053b"
-};
-
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const storage = getStorage(app);
+const db = getFirestore();
+const storage = getStorage();
+const bucket = storage.bucket();
 
 // ========================
 // 📊 Genius Market Classifier
 // ========================
-
 export function classifyMarket(ticks) {
   const prices = ticks.map(t => t.quote);
   const diff = prices.slice(1).map((p, i) => p - prices[i]);
@@ -48,8 +42,7 @@ export function classifyMarket(ticks) {
 // ========================
 // 🧠 Model + Genius Layers
 // ========================
-
-function buildModel() {
+export function buildModel() {
   const model = tf.sequential();
   model.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [4] }));
   model.add(tf.layers.dropout({ rate: 0.2 }));
@@ -97,9 +90,8 @@ export async function getSparseWeights(baseModel, trainedModel) {
 }
 
 // ========================
-// 🔮 Genius Prediction Logic
+// 🔮 Prediction Logic
 // ========================
-
 export function flashUrgency(ticks) {
   const prices = ticks.map(t => t.quote);
   const vol = Math.sqrt(prices.map((v, i) => i > 0 ? Math.pow(v - prices[i - 1], 2) : 0).reduce((a, b) => a + b, 0) / prices.length);
@@ -167,18 +159,10 @@ export async function runPrediction(ticks) {
 }
 
 // ========================
-// 📦 Module Export: Firebase + Core
+// 📦 Exports
 // ========================
-
-// ========================
-// 📦 Module Export: Firebase + Core + Model
-// ========================
-
 export {
-  app,
   db,
-  storage,
+  bucket,
   buildModel
 };
-
-
