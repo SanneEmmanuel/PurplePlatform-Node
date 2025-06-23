@@ -1,30 +1,17 @@
-// libra.js - Advanced AI Core (Firebase AserviceAccouon)
+// libra.js - Advanced AI Core (Offline ZIP Export Version)
 // Author: Dr. Sanne Karibo - PurpleBot AI (Smarter DNN Version)
-import admin from 'firebase-admin';
-import { readFileSync, existsSync } from 'fs';
+
+import { readFileSync, existsSync, createWriteStream } from 'fs';
 import * as tf from '@tensorflow/tfjs-node';
 import zlib from 'zlib';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { readFile, access } from 'fs/promises';
+import { readFile, access, writeFile, mkdir } from 'fs/promises';
+import archiver from 'archiver';
+import unzipper from 'unzipper';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const serviceAccountPath = path.join(__dirname, 'sk.json');
-if (!existsSync(serviceAccountPath)) throw new Error(`❌ Firebase service account file not found at ${serviceAccountPath}`);
-const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
-// ✅ Initialize Firebase Admin SDK (if not already initialized)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    storageBucket: 'libra-e615f.appspot.com'  
-  });
-}
-
-
-const db = admin.firestore();
-const storage = admin.storage().bucket();
 
 export function classifyMarket(ticks) {
   const prices = ticks.map(t => t.quote);
@@ -114,6 +101,20 @@ export async function loadSparseWeights(model, type = 'hunter') {
   }
 }
 
+export async function loadSparseWeightsFromZip(model, zipPath, type = 'hunter') {
+  const directory = await unzipper.Open.file(zipPath);
+  const weightsEntry = directory.files.find(f => f.path === 'weights_sparse_latest.bin');
+  if (!weightsEntry) throw new Error('Weights not found in zip.');
+  const content = await weightsEntry.buffer();
+  const deltaData = JSON.parse(zlib.gunzipSync(content).toString());
+  const weights = model.getWeights();
+  const updatedWeights = weights.map((w, i) => {
+    const delta = deltaData.find(d => d.id === i);
+    return delta ? tf.add(w, tf.tensor(delta.data, delta.shape)) : w;
+  });
+  model.setWeights(updatedWeights);
+}
+
 export function flashUrgency(ticks) {
   const prices = ticks.map(t => t.quote);
   const vol = Math.sqrt(prices.map((v, i) => i > 0 ? Math.pow(v - prices[i - 1], 2) : 0).reduce((a, b) => a + b, 0) / prices.length);
@@ -158,4 +159,28 @@ export async function runPrediction(ticks) {
   return { action: 'TRADE', flash, core, reflex };
 }
 
-export { admin, db, storage };
+export async function exportTrainingResult(model, type = 'hunter') {
+  const baseModel = buildModel();
+  const sparseWeights = await getSparseWeights(baseModel, model);
+  const exportDir = path.join(__dirname, 'export', type);
+  const weightsPath = path.join(exportDir, 'weights_sparse_latest.bin');
+  const metadataPath = path.join(exportDir, 'meta.json');
+  await mkdir(exportDir, { recursive: true });
+  const compressed = zlib.gzipSync(JSON.stringify(sparseWeights));
+  await writeFile(weightsPath, compressed);
+  const metadata = {
+    model: type,
+    date: new Date().toISOString(),
+    totalLayers: sparseWeights.length,
+    sizeKB: Math.ceil(compressed.length / 1024)
+  };
+  await writeFile(metadataPath, JSON.stringify(metadata, null, 2));
+  const zipName = `/tmp/libra_export_${Date.now()}.zip`;
+  const output = createWriteStream(zipName);
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.pipe(output);
+  archive.file(weightsPath, { name: 'weights_sparse_latest.bin' });
+  archive.file(metadataPath, { name: 'meta.json' });
+  await archive.finalize();
+  return zipName;
+}
