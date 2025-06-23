@@ -1,8 +1,7 @@
 // libra.js - Advanced AI Core (Firebase AserviceAccouon)
 // Author: Dr. Sanne Karibo - PurpleBot AI (Smarter DNN Version)
-
 import admin from 'firebase-admin';
-import serviceAccount from './sk.json' assert { type: 'json' };
+import { readFileSync, existsSync } from 'fs';
 import * as tf from '@tensorflow/tfjs-node';
 import zlib from 'zlib';
 import path from 'path';
@@ -12,13 +11,24 @@ import { readFile, access } from 'fs/promises';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const { project_id, private_key, client_email } = serviceAccount;
-
+const serviceAccountPath = './sk.json';
+if (!existsSync(serviceAccountPath)) throw new Error(`❌ Firebase service account file not found at ${serviceAccountPath}`);
+const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+// ✅ Initialize Firebase Admin SDK (if not already initialized)
 if (!admin.apps.length) {
   admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+    credential: admin.credential.cert(serviceAccount),
+    storageBucket: 'libra-e615f.appspot.com'  
+  });
 }
+
+// ✅ Export initialized Firebase services
+const db = admin.firestore();             // Firestore
+const bucket = admin.storage().bucket();  // Firebase Storage
+const auth = admin.auth();                // Firebase Authentication
+
+export { admin, db, bucket, auth };
+
 
 const db = admin.firestore();
 const storage = admin.storage().bucket();
