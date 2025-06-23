@@ -11,7 +11,7 @@ import { readFile, access } from 'fs/promises';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const serviceAccountPath = './sk.json';
+const serviceAccountPath = path.join(__dirname, 'sk.json');
 if (!existsSync(serviceAccountPath)) throw new Error(`❌ Firebase service account file not found at ${serviceAccountPath}`);
 const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
 // ✅ Initialize Firebase Admin SDK (if not already initialized)
