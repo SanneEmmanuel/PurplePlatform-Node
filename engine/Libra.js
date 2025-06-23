@@ -70,48 +70,41 @@ export async function trainShadowModel(echoBuffers) {
 
   for (const buffer of echoBuffers) {
     const echo = JSON.parse(zlib.gunzipSync(buffer));
-
-    // Extract OHLC features
     const features = echo.ticks.map(t => [t.open, t.high, t.low, t.close]);
-
-    // Compute close prices and regime importance
     const closes = echo.ticks.map(t => t.close);
     const regime = classifyMarket(echo.ticks);
     const importance = regime === 'volatile' ? 1.5 : 1.0;
-
-    // Apply importance weight by scaling label values
     const weightedCloses = closes.map(c => c * importance);
-
-    // Accumulate
     inputs.push(...features);
     scaledLabels.push(...weightedCloses);
   }
 
-  // Create tensors
   const inputTensor = tf.tensor2d(inputs);
   const labelTensor = tf.tensor1d(scaledLabels);
-
-  // Add training noise for regularization
   const noise = tf.randomNormal(inputTensor.shape, 0, 0.01);
   const noisyInputs = inputTensor.add(noise);
 
-  // Build fresh model
   const model = buildModel();
 
-  // Callbacks
-  const earlyStopping = tf.callbacks.earlyStopping({ monitor: 'loss', patience: 3 });
-  const lrScheduler = ReduceLROnPlateau({ monitor: 'loss', factor: 0.5, patience: 2 });
+  // ✅ Only EarlyStopping is supported in Node.js
+  const earlyStopping = tf.callbacks.earlyStopping({
+    monitor: 'loss',
+    patience: 3,
+    restoreBestWeight: true
+  });
 
-  // Train
   await model.fit(noisyInputs, labelTensor, {
     epochs: 100,
     batchSize: 32,
-    callbacks: [earlyStopping, lrScheduler],
+    callbacks: [earlyStopping],
     verbose: 0
   });
 
   return model;
 }
+
+
+
 
 
 // Sparse Delta Weight Extraction
