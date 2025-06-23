@@ -16,13 +16,8 @@ const { project_id, private_key, client_email } = serviceAccount;
 
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: project_id,
-      privateKey: private_key,
-      clientEmail: client_email
-    }),
-    storageBucket: 'libra-e615f.appspot.com'
-  });
+  credential: admin.credential.cert(serviceAccount)
+});
 }
 
 const db = admin.firestore();
