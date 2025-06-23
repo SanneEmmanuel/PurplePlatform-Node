@@ -12,10 +12,18 @@ import { readFile, access } from 'fs/promises';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-if (!admin.apps.length) admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'libra-e615f.appspot.com'
-});
+const { project_id, private_key, client_email } = serviceAccount;
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: project_id,
+      privateKey: private_key,
+      clientEmail: client_email
+    }),
+    storageBucket: 'libra-e615f.appspot.com'
+  });
+}
 
 const db = admin.firestore();
 const storage = admin.storage().bucket();
