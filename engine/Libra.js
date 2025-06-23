@@ -22,13 +22,6 @@ if (!admin.apps.length) {
   });
 }
 
-// ✅ Export initialized Firebase services
-const db = admin.firestore();             // Firestore
-const bucket = admin.storage().bucket();  // Firebase Storage
-const auth = admin.auth();                // Firebase Authentication
-
-export { admin, db, bucket, auth };
-
 
 const db = admin.firestore();
 const storage = admin.storage().bucket();
