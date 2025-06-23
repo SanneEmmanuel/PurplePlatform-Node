@@ -34,7 +34,9 @@ function toEchoBuffer(candles) {
 }
 
 async function getTrainingChunks(chunkSize = CHUNK_SIZE, total = SECONDS_IN_A_DAY) {
-  const all = await getTicksForTraining(total);
+  // ⏱️ Read number of days from command line (default = 1)
+const days = parseInt(process.argv[2]) || 1;
+  const all = await getTicksForTraining(total*days);
   const buffers = [];
   for (let i = 0; i < all.length; i += chunkSize) {
     const chunk = all.slice(i, i + chunkSize);
