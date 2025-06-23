@@ -1,111 +1,135 @@
 {
- "cells": [
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
-    "# 📈 PurpleBot – Secure History Trainer\n",
-    "Author: Dr. Sanne Karibo\n",
-    "\n",
-    "This notebook:\n",
-    "- Clones the PurplePlatform-Node repo\n",
-    "- Installs required dependencies\n",
-    "- Uploads and places `sk.json` securely\n",
-    "- Runs `HistoryTrain.js`"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# ✅ STEP 1: Install Node.js, Git, and npm\n",
-    "!curl -fsSL https://deb.nodesource.com/setup_20.x | bash -\n",
-    "!apt-get install -y nodejs git\n",
-    "!node -v && npm -v\n",
-    "!npm install -g npm@latest"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# ✅ STEP 2: Clone the PurplePlatform-Node repository\n",
-    "!git clone https://github.com/SanneEmmanuel/PurplePlatform-Node.git\n",
-    "%cd PurplePlatform-Node\n",
-    "!npm install"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# ✅ STEP 3: Upload your sk.json securely\n",
-    "from google.colab import files\n",
-    "uploaded = files.upload()"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# ✅ STEP 4: Move sk.json into the correct directory\n",
-    "import shutil, os\n",
-    "\n",
-    "target_dir = './engine'\n",
-    "os.makedirs(target_dir, exist_ok=True)\n",
-    "if 'sk.json' in uploaded:\n",
-    "    shutil.move('sk.json', os.path.join(target_dir, 'sk.json'))\n",
-    "    print('[✅] sk.json placed in ./engine/')\n",
-    "else:\n",
-    "    raise FileNotFoundError('❌ sk.json not uploaded')"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# ✅ STEP 5: Verify sk.json file\n",
-    "!ls -l ./engine/sk.json\n",
-    "!head ./engine/sk.json"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "# ✅ STEP 6: Run History Trainer\n",
-    "!node HistoryTrain.js"
-   ]
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 3",
-   "language": "python",
-   "name": "python3"
-  },
-  "colab": {
-   "name": "train.ipynb",
-   "provenance": [],
-   "toc_visible": true,
-   "include_colab_link": true
-  },
-  "language_info": {
-   "name": "python"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 0
+"cells": \[
+{
+"cell\_type": "markdown",
+"metadata": {},
+"source": \[
+"# 🤖 PurpleBot – Incremental AI Trainer (Google Drive Enhanced)\n",
+"Author: Dr. Sanne Karibo\n",
+"\n",
+"This notebook:\n",
+"- Mounts your Google Drive\n",
+"- Clones the PurplePlatform-Node repo\n",
+"- Installs all required dependencies\n",
+"- Downloads the last saved ZIP model (if available)\n",
+"- Trains on new echo data\n",
+"- Merges knowledge and uploads updated model to Drive\n"
+]
+},
+{
+"cell\_type": "code",
+"metadata": {},
+"outputs": \[],
+"source": \[
+"# ✅ STEP 1: Mount Google Drive\n",
+"from google.colab import drive\n",
+"drive.mount('/content/drive')"
+]
+},
+{
+"cell\_type": "code",
+"metadata": {},
+"outputs": \[],
+"source": \[
+"# ✅ STEP 2: Install Node.js and dependencies\n",
+"!curl -fsSL [https://deb.nodesource.com/setup\_20.x](https://deb.nodesource.com/setup_20.x) | bash -\n",
+"!apt-get install -y nodejs git unzip\n",
+"!node -v && npm -v\n",
+"!npm install -g npm\@latest"
+]
+},
+{
+"cell\_type": "code",
+"metadata": {},
+"outputs": \[],
+"source": \[
+"# ✅ STEP 3: Clone PurplePlatform-Node and install\n",
+"!git clone [https://github.com/SanneEmmanuel/PurplePlatform-Node.git\n](https://github.com/SanneEmmanuel/PurplePlatform-Node.git\n)",
+"%cd PurplePlatform-Node\n",
+"!npm install"
+]
+},
+{
+"cell\_type": "code",
+"metadata": {},
+"outputs": \[],
+"source": \[
+"# ✅ STEP 4: Prepare Drive paths\n",
+"import os, shutil\n",
+"MODEL\_ZIP\_PATH = '/content/drive/MyDrive/LibraAI/libra\_model.zip'\n",
+"ECHO\_DIR = '/content/drive/MyDrive/LibraAI/echos'\n",
+"os.makedirs(ECHO\_DIR, exist\_ok=True)"
+]
+},
+{
+"cell\_type": "code",
+"metadata": {},
+"outputs": \[],
+"source": \[
+"# ✅ STEP 5: Create HistoryTrain-Incremental.js\n",
+"train\_script = """
+import { readdirSync, readFileSync } from 'fs';
+import { join } from 'path';
+import zlib from 'zlib';
+import { buildModel, trainShadowModel, exportTrainingResult, loadSparseWeightsFromZip } from './engine/libra.js';
+
+const echoDir = process.env.ECHO\_DIR || './echos';
+const zipPath = process.env.MODEL\_ZIP || './model\_latest.zip';
+
+async function main() {
+const model = buildModel();
+
+// If model zip exists, load weights
+try {
+await loadSparseWeightsFromZip(model, zipPath);
+console.log('\[📦] Loaded existing model from ZIP.');
+} catch (err) {
+console.log('\[🆕] No existing model found or failed to load, starting fresh.');
+}
+
+const echoFiles = readdirSync(echoDir).filter(f => f.endsWith('.gz'));
+const buffers = echoFiles.map(f => readFileSync(join(echoDir, f)));
+
+const trained = await trainShadowModel(buffers);
+const zipOut = await exportTrainingResult(trained);
+
+console.log(`[✅] Exported updated model to: ${zipOut}`);
+}
+
+main();
+""""
+"with open('HistoryTrain-Incremental.js', 'w') as f:\n",
+"    f.write(train\_script)"
+]
+},
+{
+"cell\_type": "code",
+"metadata": {},
+"outputs": \[],
+"source": \[
+"# ✅ STEP 6: Run Training\n",
+"%env MODEL\_ZIP=/content/drive/MyDrive/LibraAI/libra\_model.zip\n",
+"%env ECHO\_DIR=/content/drive/MyDrive/LibraAI/echos\n",
+"!node HistoryTrain-Incremental.js"
+]
+}
+],
+"metadata": {
+"kernelspec": {
+"display\_name": "Python 3",
+"language": "python",
+"name": "python3"
+},
+"colab": {
+"name": "train\_incremental.ipynb",
+"provenance": \[],
+"toc\_visible": true,
+"include\_colab\_link": true
+},
+"language\_info": {
+"name": "python"
+}
+},
+"nbformat": 4,
+"nbformat\_minor": 0
 }
