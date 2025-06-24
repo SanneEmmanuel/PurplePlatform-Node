@@ -1,15 +1,12 @@
 // HistoryTrain.js - Incremental AI Training from ZIP in Google Drive
-// Author: Dr. Sanne Karibo – PurpleBot AI Core
+// Author: Dr. Sanne Karibo – PurpleBot AI Core (AI Name: Sanne-junior)
 
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import unzipper from 'unzipper';
 import archiver from 'archiver';
-import {
-  getTicksForTraining
-} from './deriv.js';
-
+import { getTicksForTraining } from './deriv.js';
 import {
   trainShadowModel,
   getSparseWeights,
@@ -24,30 +21,21 @@ const SECONDS_IN_A_DAY = 86400;
 
 function toEchoBuffer(candles) {
   return zlib.gzipSync(JSON.stringify({
-    ticks: candles.map(c => ({
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close
-    }))
+    ticks: candles.map(({ open, high, low, close }) => ({ open, high, low, close }))
   }));
 }
 
-async function getTrainingChunks(chunkSize = CHUNK_SIZE, total = SECONDS_IN_A_DAY) {
-  // ⏱️ Read number of days from command line (default = 1)
-const days = parseInt(process.argv[2]) || 1;
-  const all = await getTicksForTraining(total*days);
-  const buffers = [];
-  for (let i = 0; i < all.length; i += chunkSize) {
-    const chunk = all.slice(i, i + chunkSize);
-    if (chunk.length === chunkSize) {
-      buffers.push(toEchoBuffer(chunk));
-    }
-  }
-  return buffers;
+async function getTrainingChunks(chunkSize = CHUNK_SIZE, seconds = SECONDS_IN_A_DAY) {
+  const days = parseInt(process.argv[2]) || 1;
+  const allTicks = await getTicksForTraining(seconds * days);
+  return Array.from({ length: Math.floor(allTicks.length / chunkSize) }, (_, i) => {
+    const chunk = allTicks.slice(i * chunkSize, (i + 1) * chunkSize);
+    return toEchoBuffer(chunk);
+  });
 }
 
 async function extractZip(zipPath, extractTo) {
+  if (!fs.existsSync(zipPath)) return;
   return new Promise((resolve, reject) => {
     fs.createReadStream(zipPath)
       .pipe(unzipper.Extract({ path: extractTo }))
@@ -56,63 +44,58 @@ async function extractZip(zipPath, extractTo) {
   });
 }
 
-function ensureDir(p) {
-  if (!fs.existsSync(p)) {
-    fs.mkdirSync(p, { recursive: true });
-    console.log('[📁] Created:', p);
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`[📁] Sanne-junior: Created directory ${dir}`);
   }
 }
 
-async function zipModelDir(sourceDir, outPath) {
-  const output = fs.createWriteStream(outPath);
-  const archive = archiver('zip', { zlib: { level: 9 } });
-
+async function zipModelDir(source, outputPath) {
   return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(outputPath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
     archive.pipe(output);
-    archive.directory(sourceDir, false);
+    archive.directory(source, false);
     archive.finalize();
-
     output.on('close', resolve);
     archive.on('error', reject);
   });
 }
 
 async function main() {
-  console.time('[⏱️] Total Training Time');
+  console.time('[⏱️] Sanne-junior: Training Time');
   ensureDir(MODEL_DIR);
 
-  // 🔁 Attempt to load previous model
   if (fs.existsSync(ZIP_PATH)) {
-    console.log('[📦] Loading existing model ZIP from Drive...');
+    console.log('[📦] Sanne-junior: Extracting previous model from Drive...');
     await extractZip(ZIP_PATH, MODEL_DIR);
   } else {
-    console.log('[⚠️] No existing ZIP found — starting afresh...');
+    console.log('[⚠️] Sanne-junior: No model found. Starting fresh...');
   }
 
   const echoBuffers = await getTrainingChunks();
-  console.log(`[🧠] ${echoBuffers.length} Echo chunks prepared`);
+  console.log(`[🧠] Sanne-junior: Prepared ${echoBuffers.length} echo buffers`);
 
   const baseModel = buildModel();
   await loadSparseWeights(baseModel, 'hunter');
 
-  console.log('[🔥] Training model on new data...');
+  console.log('[🔥] Sanne-junior: Training in progress...');
   const trainedModel = await trainShadowModel(echoBuffers);
 
-  console.log('[🔬] Calculating sparse updates...');
+  console.log('[🔬] Sanne-junior: Extracting sparse updates...');
   const deltas = await getSparseWeights(baseModel, trainedModel);
 
-  // Save sparse weights locally
   const sparsePath = path.join(MODEL_DIR, 'weights_sparse_latest.bin');
   const compressed = zlib.gzipSync(JSON.stringify(deltas));
   fs.writeFileSync(sparsePath, compressed);
-  console.log('[💾] Weights saved locally');
+  console.log('[💾] Sanne-junior: Saved weights locally');
 
-  // Zip and update Drive
   await zipModelDir(MODEL_DIR, ZIP_PATH);
-  console.log('[☁️] Updated model ZIP saved to Drive');
+  console.log('[☁️] Sanne-junior: Model ZIP updated on Drive');
 
-  console.timeEnd('[⏱️] Total Training Time');
-  console.log('[✅] Incremental training complete');
+  console.timeEnd('[⏱️] Sanne-junior: Training Time');
+  console.log('[✅] Sanne-junior: Training complete');
 }
 
-main().catch(e => console.error('[❌] Training Error:', e));
+main().catch(e => console.error('[❌] Sanne-junior: Error during training:', e)));
