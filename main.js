@@ -1,23 +1,23 @@
-// main.js (ESM-Compatible & Libra-Ready)
-// PurpleBot by Dr. Sanne Karibo
-
+// main.js — Optimized PurpleBot Server with Libra AI + Zip Upload/Download + TinyLlama
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { promises as fs } from 'fs';
-import dotenv from 'dotenv';
 import http from 'http';
-import { Server as WebSocketServer } from 'ws';
+import dotenv from 'dotenv';
 import cors from 'cors';
-
+import multer from 'multer';
+import axios from 'axios';
+import fs from 'fs';
+import { Server as WebSocketServer } from 'ws';
 import deriv from './deriv.js';
-import indicators from './indicators.js';
-import { runPrediction, evolveModels } from './engine/Libra.js';
+import {
+  runPrediction,
+  lastAnalysisResult,
+  loadSparseWeightsFromZip
+} from './engine/Libra.js';
 
-// Path helpers
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 dotenv.config();
 
 const app = express();
@@ -28,144 +28,145 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+const upload = multer({ dest: '/tmp' });
 
-let tradingInterval = null;
-let isBotTrading = false;
-const TRADE_INTERVAL = 10000;
+let botLoop = null, isTrading = false;
 
-wss.on('connection', (socket) => {
-  console.log('[🌐] WebSocket client connected');
-
-  const interval = setInterval(async () => {
-    const indicatorData = await gatherIndicatorData();
-    const data = {
-      type: 'update',
-      candles: deriv.candles,
-      indicators: indicatorData,
-      trades: {
-        active: Array.from(deriv.openContracts.values()),
-        closed: Array.from(deriv.closedContracts.values())
-      },
-      balance: deriv.getAccountBalance(),
-      trading: isBotTrading
-    };
-
+// WebSocket: broadcast market state every 3s
+wss.on('connection', (ws) => {
+  const i = setInterval(async () => {
     try {
-      socket.send(JSON.stringify(data));
+      const ticks = await deriv.getTicksForTraining(300);
+      ws.send(JSON.stringify({
+        type: 'update',
+        ticks,
+        trading: isTrading,
+        balance: deriv.getAccountBalance(),
+        trades: {
+          active: [...deriv.openContracts.values()],
+          closed: [...deriv.closedContracts.values()]
+        }
+      }));
     } catch (err) {
-      console.error('[❌] WebSocket send error:', err.message);
+      console.error('[WS Error]', err.message);
     }
   }, 3000);
-
-  socket.on('close', () => clearInterval(interval));
+  ws.on('close', () => clearInterval(i));
 });
 
-app.post('/trade-start', (req, res) => {
-  if (tradingInterval) return res.status(409).json({ error: 'Bot is already running' });
-  console.log('[🚀] Starting trading bot...');
-  isBotTrading = true;
-  tradingInterval = setInterval(tradingLoop, TRADE_INTERVAL);
-  res.json({ message: 'Bot started' });
+// --------- Routes ---------
+
+app.get('/analysis', async (req, res) => {
+  try {
+    if (!lastAnalysisResult) {
+      const ticks = await deriv.getTicksForTraining(300);
+      const r = await runPrediction(ticks);
+      return res.json(r);
+    }
+    res.json(lastAnalysisResult);
+  } catch (e) {
+    res.status(500).json({ error: 'Analysis failed' });
+  }
 });
 
-app.post('/trade-end', (req, res) => {
-  if (!tradingInterval) return res.status(409).json({ error: 'Bot not running' });
-  clearInterval(tradingInterval);
-  tradingInterval = null;
-  isBotTrading = false;
-  console.log('[🐝] Bot stopped.');
-  res.json({ message: 'Bot stopped' });
-});
-
-app.get('/api/status', (req, res) => {
-  res.json({ trading: isBotTrading, openContracts: deriv.openContracts.size });
-});
-
-app.get('/api/predict', async (req, res) => {
+app.post('/api/predict', async (req, res) => {
   try {
     const ticks = await deriv.getTicksForTraining(300);
-    const result = await runPrediction(ticks);
-    res.json(result);
-  } catch (err) {
-    console.error('[❌] Prediction error:', err.message);
+    res.json(await runPrediction(ticks));
+  } catch (e) {
     res.status(500).json({ error: 'Prediction failed' });
   }
 });
 
-app.post('/api/train', async (req, res) => {
+app.post('/chat', async (req, res) => {
   try {
-    await evolveModels();
-    res.json({ message: 'Training complete' });
-  } catch (err) {
-    console.error('[❌] Training error:', err.message);
-    res.status(500).json({ error: 'Training failed' });
+    const { prompt = '' } = req.body;
+    const { data } = await axios.post('http://localhost:11434/api/generate', {
+      model: 'tinyllama', prompt, stream: false
+    });
+    res.json({ reply: data.response });
+  } catch (e) {
+    res.status(500).json({ error: 'Chat failed' });
   }
 });
 
-app.get('/api/chart-data', (req, res) => {
-  res.json({ candles: deriv.candles });
-});
-
-app.get('/api/indicators', async (req, res) => {
+app.post('/upload-zip', upload.single('model'), async (req, res) => {
   try {
-    const indicatorsData = await gatherIndicatorData();
-    res.json({ indicators: indicatorsData });
-  } catch (err) {
-    console.error('Error fetching indicators:', err.message);
-    res.status(500).json({ error: 'Failed to fetch indicators' });
+    await loadSparseWeightsFromZip(null, req.file.path);
+    res.json({ message: 'ZIP uploaded and loaded' });
+  } catch (e) {
+    res.status(500).json({ error: 'Upload failed' });
   }
 });
 
-app.get('/api/current-price', async (req, res) => {
+app.post('/download-zip', async (req, res) => {
   try {
-    const price = await deriv.getCurrentPrice();
-    res.json({ price, symbol: deriv.getCurrentSymbol() });
-  } catch (err) {
-    console.error('Error fetching current price:', err.message);
-    res.status(500).json({ error: 'Failed to fetch current price' });
+    const { url } = req.body;
+    const zipPath = `/tmp/model_${Date.now()}.zip`;
+    const writer = fs.createWriteStream(zipPath);
+    const response = await axios({ method: 'get', url, responseType: 'stream' });
+    response.data.pipe(writer);
+    writer.on('finish', async () => {
+      await loadSparseWeightsFromZip(null, zipPath);
+      res.json({ message: 'ZIP downloaded and loaded' });
+    });
+    writer.on('error', e => {
+      console.error('[❌] Write error', e.message);
+      res.status(500).json({ error: 'Download failed' });
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Download failed' });
   }
 });
 
-app.get('/api/ticks-for-training', async (req, res) => {
-  const count = parseInt(req.query.count) || 1000;
+app.post('/trade-start', (req, res) => {
+  if (botLoop) return res.status(409).json({ error: 'Bot already running' });
+  isTrading = true;
+  botLoop = setInterval(tradingLogic, 10000);
+  res.json({ message: 'Bot started' });
+});
+
+app.post('/trade-end', (req, res) => {
+  if (!botLoop) return res.status(409).json({ error: 'Bot not running' });
+  clearInterval(botLoop);
+  isTrading = false;
+  botLoop = null;
+  res.json({ message: 'Bot stopped' });
+});
+
+app.get('/api/status', (req, res) => {
+  res.json({ trading: isTrading, openContracts: deriv.openContracts.size });
+});
+
+app.get('/api/chart-data', async (req, res) => {
   try {
-    const ticks = await deriv.getTicksForTraining(count);
-    res.json({ ticks, symbol: deriv.getCurrentSymbol() });
-  } catch (err) {
-    console.error('Error fetching training ticks:', err.message);
-    res.status(400).json({ error: err.message });
+    res.json({ ticks: await deriv.getTicksForTraining(300) });
+  } catch (e) {
+    res.status(500).json({ error: 'Chart data error' });
   }
 });
 
-async function gatherIndicatorData() {
-  const ema20 = await indicators.calculateEMA(deriv.candles, 20);
-  const rsi7 = await indicators.calculateRSI(deriv.candles, 7);
-  const fractals = await indicators.calculateBillWilliamsFractals(deriv.candles);
-  return { ema20, rsi7, ...fractals };
-}
-
-async function tradingLoop() {
+// --------- Trading Core ---------
+async function tradingLogic() {
   try {
     const ticks = await deriv.getTicksForTraining(300);
-    const result = await runPrediction(ticks);
-
-    if (result?.action === 'TRADE') {
-      const { direction, size, tp } = result.reflex;
+    const r = await runPrediction(ticks);
+    if (r?.action === 'TRADE') {
+      const { direction, size } = r.reflex;
       const contractType = direction > 0 ? 'CALL' : 'PUT';
-      const proposal = await deriv.requestTradeProposal(contractType, size * 10, 5);
-
-      if (proposal?.proposal?.id) {
-        await deriv.buyContract(proposal.proposal.id, proposal.proposal.ask_price);
-        console.log(`[✅] Executed ${contractType} based on reflex AI`);
+      const p = await deriv.requestTradeProposal(contractType, size * 10, 5);
+      if (p?.proposal?.id) {
+        await deriv.buyContract(p.proposal.id, p.proposal.ask_price);
+        console.log(`[✅] ${contractType} executed`);
       }
     } else {
-      console.log('[⌛] Waiting — no urgent prediction.');
+      console.log('[⌛] No trade — waiting');
     }
-  } catch (err) {
-    console.error('[❌] Error in trading loop:', err.message);
+  } catch (e) {
+    console.error('[Trade Loop Error]', e.message);
   }
 }
 
 server.listen(PORT, () => {
-  console.log(`[✅] PurpleBot backend running at http://localhost:${PORT}`);
+  console.log(`[✅] PurpleBot backend running → http://localhost:${PORT}`);
 });
