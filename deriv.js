@@ -39,6 +39,7 @@ let symbolDetails = [];
 let accountBalance = null;
 let accountInfo = {};
 let onInvalidSymbol = null;
+let isAuthorized = false;
 
 let connection = null;
 let retries = 0;
@@ -103,6 +104,7 @@ function createConnection() {
     console.error('[❌] WebSocket error:', err.message);
   });
   connection.on('close', () => {
+    isAuthorized = false;
     connect();
   });
 }
@@ -165,20 +167,20 @@ function handleMessage(message) {
 
   switch (data.msg_type) {
     case 'authorize':
-  if (data.error) {
-    console.error('[❌] Authorization failed:', data.error.message);
-    break;
-  }
-  const auth = data.authorize;
-  accountInfo = {
-    loginid: auth.loginid,
-    currency: auth.currency,
-    is_virtual: auth.is_virtual,
-    email: auth.email,
-    fullname: auth.fullname || ''
-  };
-  break;
-
+      if (data.error || !data.authorize) {
+        console.error('[❌] Authorization failed:', data.error?.message || 'No authorize object received');
+        isAuthorized = false;
+        break;
+      }
+      const auth = data.authorize;
+      accountInfo = {
+        loginid: auth.loginid,
+        currency: auth.currency,
+        is_virtual: auth.is_virtual,
+        email: auth.email,
+        fullname: auth.fullname || ''
+      };
+      isAuthorized = true;
       break;
 
     case 'balance':
@@ -222,10 +224,18 @@ function authorize() {
     const token = getToken();
     if (!token) return reject(new Error('Missing API token'));
     send({ authorize: token }, (data) => {
-      if (data.error) reject(new Error(data.error.message));
-      else resolve(data);
+      if (data.error || !data.authorize) {
+        isAuthorized = false;
+        return reject(new Error(data.error?.message || 'Invalid authorize response'));
+      }
+      isAuthorized = true;
+      resolve(data);
     });
   });
+}
+
+function ensureAuth() {
+  if (!isAuthorized) throw new Error('Not authorized. Call failed.');
 }
 
 function loadSymbols() {
@@ -261,6 +271,7 @@ function streamBalance() {
 }
 
 function requestTradeProposal(contractType, amount, duration, durationUnit = 'm') {
+  ensureAuth();
   return new Promise((resolve) => {
     send({
       proposal: 1,
@@ -277,10 +288,12 @@ function requestTradeProposal(contractType, amount, duration, durationUnit = 'm'
 }
 
 function buyContract(proposalId, price) {
+  ensureAuth();
   send({ buy: 1, price, proposal_id: proposalId });
 }
 
 function trackContract(contractId) {
+  ensureAuth();
   send({ open_contract: 1, contract_id: contractId, subscribe: 1 });
 }
 
@@ -303,6 +316,7 @@ async function reconnectWithNewToken(token) {
 }
 
 async function getCurrentPrice() {
+  ensureAuth();
   await waitForSocketReady();
   return new Promise((resolve, reject) => {
     send({ ticks: getSymbol() }, (data) => {
@@ -313,6 +327,7 @@ async function getCurrentPrice() {
 }
 
 async function getLast100Ticks() {
+  ensureAuth();
   await waitForSocketReady();
   return new Promise((resolve, reject) => {
     send({ ticks_history: getSymbol(), count: 100, end: 'latest', style: 'ticks' }, (data) => {
@@ -323,13 +338,14 @@ async function getLast100Ticks() {
 }
 
 async function getTicksForTraining(count) {
+  ensureAuth();
   if (count < 1) throw new Error('Count must be >= 1');
   await waitForSocketReady();
 
   const allTicks = [];
   const chunkSize = 10000;
   let remaining = count;
-  let end = Math.floor(Date.now() / 1000); // current UTC time in seconds
+  let end = Math.floor(Date.now() / 1000);
 
   while (remaining > 0) {
     const currentCount = Math.min(remaining, chunkSize);
@@ -347,16 +363,14 @@ async function getTicksForTraining(count) {
       });
     });
 
-    if (!chunk.length) break; // prevent infinite loop
-    allTicks.unshift(...chunk); // prepend for chronological order
-
+    if (!chunk.length) break;
+    allTicks.unshift(...chunk);
     remaining -= chunk.length;
-    end = start; // step backward in time
+    end = start;
   }
 
-  return allTicks.slice(-count); // enforce exact count
+  return allTicks.slice(-count);
 }
-
 
 process.on('SIGINT', () => {
   disconnect();
