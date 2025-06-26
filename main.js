@@ -1,5 +1,5 @@
 // main.js - PurpleBot server
-//v2.0 By Dr Sanne Karibo
+//Dr Sanne Karibo
 import express from 'express';
 import fileUpload from 'express-fileupload';
 import axios from 'axios';
@@ -8,11 +8,13 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { WebSocketServer } from 'ws';
+import { pipeline } from 'stream/promises';
 
 import {
   requestTradeProposal, buyContract,
   getCurrentPrice, getLast100Ticks,
-  getAccountBalance, getAccountInfo
+  getAccountBalance, getAccountInfo,
+  getLast300Ticks
 } from './deriv.js';
 
 import {
@@ -24,6 +26,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const WSPORT = 3001;
+const TMP_DIR = '/tmp';
 let trading = false, tradingLoop = null;
 
 app.use(cors());
@@ -31,24 +34,34 @@ app.use(express.json());
 app.use(fileUpload());
 app.use(express.static('public'));
 
+// Helpers
+const getAccountStatus = async () => {
+  const [info, bal, price] = await Promise.all([
+    getAccountInfo(),
+    getAccountBalance(),
+    getCurrentPrice().catch(() => 0)
+  ]);
+  return {
+    fullName: info.fullname || '',
+    accountNumber: info.loginid || '',
+    accountBalance: bal || 0,
+    currentPrice: price || 0,
+    tradingStatus: trading ? 'active' : 'inactive'
+  };
+};
+
+const placeTrade = async (type) => {
+  const prop = await requestTradeProposal(type, 1, 1);
+  buyContract(prop.proposal.id, 1);
+};
+
 // WebSocket Stream
 const wss = new WebSocketServer({ port: WSPORT });
 wss.on('connection', ws => {
   console.log('[WS] Connected');
   const loop = setInterval(async () => {
     try {
-      const [info, bal, price] = await Promise.all([
-        getAccountInfo(), 
-        getAccountBalance(),
-        getCurrentPrice().catch(() => 0)
-      ]);
-      ws.send(JSON.stringify({
-        fullName: info.fullname || '', 
-        accountNumber: info.loginid || '',
-        accountBalance: bal || 0, 
-        currentPrice: price || 0,
-        tradingStatus: trading ? 'active' : 'inactive'
-      }));
+      ws.send(JSON.stringify(await getAccountStatus()));
     } catch (e) {
       console.error('[WS Error]', e);
     }
@@ -58,105 +71,92 @@ wss.on('connection', ws => {
 
 // Status
 app.get('/status', async (req, res) => {
-  const info = getAccountInfo(), bal = getAccountBalance();
-  const price = await getCurrentPrice().catch(() => 0);
-  res.json({
-    fullName: info.fullname || '', accountNumber: info.loginid || '',
-    accountBalance: bal || 0, currentPrice: price || 0,
-    tradingStatus: trading ? 'active' : 'inactive'
-  });
+  res.json(await getAccountStatus());
 });
 
-// Start AI Trading
+// Trading Control
+const tradingCycle = async () => {
+  const prices = await getLast100Ticks();
+  const { action } = await runPrediction(prices);
+  if (action === 'buy' || action === 'sell') {
+    await placeTrade(action === 'buy' ? 'CALL' : 'PUT');
+  }
+};
+
 app.post('/trade-start', async (_, res) => {
   if (trading) return res.json({ message: 'Already trading' });
   trading = true;
-  tradingLoop = setInterval(async () => {
-    try {
-      const prices = await getLast100Ticks();
-      const { action } = await runPrediction(prices);
-      if (action === 'buy' || action === 'sell') {
-        const type = action === 'buy' ? 'CALL' : 'PUT';
-        const prop = await requestTradeProposal(type, 1, 1);
-        buyContract(prop.proposal.id, 1);
-      }
-    } catch {}
-  }, 5000);
+  tradingLoop = setInterval(() => tradingCycle().catch(console.error), 5000);
   res.json({ message: 'Trading started' });
 });
 
-// Stop Trading
 app.post('/trade-end', (_, res) => {
   trading = false;
   clearInterval(tradingLoop);
   res.json({ message: 'Trading stopped' });
 });
 
-// Manual Buy/Sell
-app.post('/api/trade-buy', async (_, res) => {
+// Trade Execution
+const handleTrade = (type) => async (_, res) => {
   try {
-    const prop = await requestTradeProposal('CALL', 1, 1);
-    buyContract(prop.proposal.id, 1);
-    res.json({ type: 'buy', success: true });
+    await placeTrade(type);
+    res.json({ type: type.toLowerCase(), success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
-app.post('/api/trade-sell', async (_, res) => {
-  try {
-    const prop = await requestTradeProposal('PUT', 1, 1);
-    buyContract(prop.proposal.id, 1);
-    res.json({ type: 'sell', success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+};
+
+app.post('/api/trade-buy', handleTrade('CALL'));
+app.post('/api/trade-sell', handleTrade('PUT'));
+
 app.post('/api/close-trades', (_, res) => {
   res.json({ message: 'Manual close-trade not implemented.' });
 });
 
-// AI Analysis
+// Data Endpoints
 app.get('/api/analysis', (_, res) => {
   res.json(lastAnalysisResult || { message: 'No analysis yet' });
 });
 
-// Libra Chat (Stub)
-app.post('/chat', (req, res) => {
-  res.json({ response: `Libra: You said "${req.body.message}"` });
-});
-
-// Upload ZIP (file)
-app.post('/action/upload-zip', async (req, res) => {
-  const file = req.files?.model;
-  if (!file) return res.status(400).send('No file');
-  const zipPath = path.join('/tmp', file.name);
+app.get('/chart-data', async (_, res) => {
   try {
-    await file.mv(zipPath);
-    await loadSparseWeightsFromZip(null, zipPath);
-    res.json({ message: 'Weights loaded', path: zipPath });
+    res.json(await getLast300Ticks());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Upload ZIP (from link)
+// Chat
+app.post('/chat', (req, res) => {
+  res.json({ response: `Libra: You said "${req.body.message}"` });
+});
+
+// File Handling
+const handleZipUpload = async (zipPath, res, successMessage) => {
+  try {
+    await loadSparseWeightsFromZip(null, zipPath);
+    res.json({ message: successMessage, path: zipPath });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+app.post('/action/upload-zip', async (req, res) => {
+  const file = req.files?.model;
+  if (!file) return res.status(400).send('No file');
+  const zipPath = path.join(TMP_DIR, file.name);
+  await file.mv(zipPath);
+  await handleZipUpload(zipPath, res, 'Weights loaded');
+});
+
 app.post('/action/upload-link', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'Missing URL' });
-  const zipPath = '/tmp/model_from_link.zip';
-  const writer = fs.createWriteStream(zipPath);
+  const zipPath = path.join(TMP_DIR, 'model_from_link.zip');
   try {
-    const stream = await axios({ method: 'GET', url, responseType: 'stream' });
-    stream.data.pipe(writer);
-    writer.on('finish', async () => {
-      try {
-        await loadSparseWeightsFromZip(null, zipPath);
-        res.json({ message: 'Weights loaded from link', path: zipPath });
-      } catch (err) {
-        res.status(500).json({ error: 'Load failed: ' + err.message });
-      }
-    });
-    writer.on('error', () => res.status(500).json({ error: 'Write failed' }));
+    const response = await axios({ url, responseType: 'stream' });
+    await pipeline(response.data, fs.createWriteStream(zipPath));
+    await handleZipUpload(zipPath, res, 'Weights loaded from link');
   } catch (err) {
     res.status(500).json({ error: 'Download failed: ' + err.message });
   }
@@ -164,9 +164,7 @@ app.post('/action/upload-link', async (req, res) => {
 
 // Keep server alive
 app.get('/awake', (_, res) => res.send('✅ Awake'));
-setInterval(() => {
-  axios.get(`http://localhost:${PORT}/awake`).catch(() => {});
-}, 1000 * 60 * 14);
+setInterval(() => axios.get(`http://localhost:${PORT}/awake`).catch(() => {}), 8.4e5);
 
 // Start
 app.listen(PORT, () => {
