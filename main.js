@@ -9,7 +9,7 @@ import multer from 'multer';
 import axios from 'axios';
 import fs from 'fs/promises';
 import WebSocket from 'ws';
-import deriv from './deriv.js';
+import * as deriv from './deriv.js';  // Changed to namespace import
 import { runPrediction, lastAnalysisResult, loadSparseWeightsFromZip } from './engine/Libra.js';
 
 // --------- Config ---------
@@ -40,18 +40,23 @@ const activeConnections = new Set();
 // --------- WebSocket ---------
 wss.on('connection', ws => {
   activeConnections.add(ws);
-  const update = () => deriv.getTicksForTraining(300)
-    .then(ticks => ws.send(JSON.stringify({
-      type: 'update',
-      ticks,
-      trading: !!botLoop,
-      balance: deriv.getAccountBalance(),
-      trades: {
-        active: [...deriv.openContracts.values()],
-        closed: [...deriv.closedContracts.values()]
-      }
-    })))
-    .catch(console.error);
+  const update = async () => {
+    try {
+      const ticks = await deriv.getTicksForTraining(300);
+      ws.send(JSON.stringify({
+        type: 'update',
+        ticks,
+        trading: !!botLoop,
+        balance: deriv.getAccountBalance(),
+        trades: {
+          active: [...deriv.openContracts.values()],
+          closed: [...deriv.closedContracts.values()]
+        }
+      }));
+    } catch (err) {
+      console.error('[WS Error]', err.message);
+    }
+  };
 
   const interval = setInterval(update, WS_UPDATE_INTERVAL);
   ws.on('close', () => {
@@ -126,15 +131,19 @@ app.post('/trade-end', (_, res) => toggleTrading(false, res));
 // --------- Core Trading Logic ---------
 async function tradingLogic() {
   try {
-    const { action, reflex } = await runPrediction(await deriv.getTicksForTraining(300));
-    if (action !== 'TRADE') return;
-
-    const contractType = reflex.direction > 0 ? 'CALL' : 'PUT';
-    const proposal = await deriv.requestTradeProposal(contractType, reflex.size * 10, 5);
+    const ticks = await deriv.getTicksForTraining(300);
+    const analysis = await runPrediction(ticks);
     
-    if (proposal?.proposal?.id) {
-      await deriv.buyContract(proposal.proposal.id, proposal.proposal.ask_price);
-      broadcast({ type: 'trade', contract: proposal.proposal });
+    if (analysis?.action === 'TRADE') {
+      const { direction, size } = analysis.reflex;
+      const contractType = direction > 0 ? 'CALL' : 'PUT';
+      const proposal = await deriv.requestTradeProposal(contractType, size * 10, 5);
+      
+      if (proposal?.proposal?.id) {
+        await deriv.buyContract(proposal.proposal.id, proposal.proposal.ask_price);
+        console.log(`[TRADE] Executed ${contractType} position`);
+        broadcast({ type: 'trade', contract: proposal.proposal });
+      }
     }
   } catch (e) {
     console.error('[TRADING ERROR]', e.message);
@@ -147,12 +156,14 @@ server.listen(PORT, () => {
   [🚀] PurpleBot AI Trading System
   [📡] WebSocket: ws://localhost:${PORT}
   [🌐] HTTP: http://localhost:${PORT}
-  [💰] Deriv API: ${deriv.isConnected ? 'Connected' : 'Disconnected'}`);
-
+  [💰] Deriv API: ${deriv.isConnected ? 'Connected' : 'Disconnected'}
+  `);
+  
   process.on('SIGTERM', () => {
     console.log('Shutting down gracefully...');
-    botLoop && clearInterval(botLoop);
+    if (botLoop) clearInterval(botLoop);
     wss.close();
     server.close();
+    process.exit(0);
   });
 });
