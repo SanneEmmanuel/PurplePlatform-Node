@@ -156,7 +156,70 @@ export async function loadSparseWeightsFromZip(model, zipPath, type = 'hunter') 
   }
 }
 
-// The rest of the functions (flashUrgency, coreDirection, reflexDecision, runPrediction, exportTrainingResult)
-// remain unchanged — only the directory logic was updated.
+// Flash Urgency Signal Detection
+function flashUrgency(prices, threshold = 3.5) {
+  if (prices.length < 5) return false;
+  const diffs = prices.slice(-5).map((v, i, arr) => i ? Math.abs(v - arr[i - 1]) : 0).slice(1);
+  const urgency = diffs.reduce((a, b) => a + b, 0);
+  return urgency > threshold;
+}
+
+// Core Directional Analysis
+function coreDirection(prices) {
+  const diffs = prices.map((v, i, arr) => i ? v - arr[i - 1] : 0).slice(1);
+  const avg = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+  return avg > 0 ? 'up' : avg < 0 ? 'down' : 'neutral';
+}
+
+// Reflex Decision Logic
+function reflexDecision({ prediction, confidence }, prices) {
+  if (flashUrgency(prices)) {
+    const direction = coreDirection(prices);
+    return {
+      action: direction === 'up' ? 'buy' : direction === 'down' ? 'sell' : 'hold',
+      confidence: 0.95,
+      reason: 'reflex_urgency_signal'
+    };
+  }
+  return { action: prediction, confidence, reason: 'model_prediction' };
+}
+
+// Run Prediction Pipeline
+async function runPrediction(prices) {
+  if (!hunterModel || prices.length === 0) {
+    return { action: 'hold', confidence: 0, reason: 'invalid_model_or_input' };
+  }
+
+  try {
+    const inputTensor = tf.tensor2d([prices], [1, prices.length]);
+    const [buy, sell, hold] = await hunterModel.predict(inputTensor).data();
+    const maxVal = Math.max(buy, sell, hold);
+    const prediction = maxVal === buy ? 'buy' : maxVal === sell ? 'sell' : 'hold';
+    
+    return reflexDecision({ prediction, confidence: maxVal }, prices);
+  } catch (err) {
+    console.error("runPrediction Error:", err);
+    return { action: 'hold', confidence: 0, reason: 'prediction_failure' };
+  }
+}
+
+// Export Training Result as ZIP
+async function exportTrainingResult() {
+  try {
+    const modelDir = '/tmp/model/hunter';
+    const zip = new AdmZip();
+    fs.readdirSync(modelDir).forEach(file => {
+      zip.addLocalFile(path.join(modelDir, file));
+    });
+
+    const outputPath = `/tmp/hunter_model_${Date.now()}.zip`;
+    zip.writeZip(outputPath);
+    console.log("Model exported:", outputPath);
+    return outputPath;
+  } catch (err) {
+    console.error("exportTrainingResult Error:", err);
+    return null;
+  }
+}
 
 export const ready = preloadedModelPromise;
