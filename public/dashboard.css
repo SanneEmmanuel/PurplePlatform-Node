@@ -1,126 +1,227 @@
-/* dashboard.css - PurpleBot */
+/* Base Reset and Layout */
 body {
-  font-family: 'Roboto', sans-serif;
-  background-color: #0e0e0e;
   margin: 0;
-  color: #e0e0e0;
+  font-family: 'Segoe UI', sans-serif;
+  background-color: #0f0f13;
+  color: #f0f0f0;
+  overflow: hidden;
 }
 
-header {
-  background: linear-gradient(to right, #1c1c1e, #232323);
-  padding: 0.75rem 1rem;
+#dashboard {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #2c2c2c;
+  height: 100vh;
+  width: 100vw;
 }
 
-.menu-toggle {
-  font-size: 1.5rem;
-  color: white;
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-
-.symbol-control {
+/* Sidebar */
+.sidebar {
+  width: 260px;
+  background-color: #16161c;
+  padding: 20px;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.4);
   display: flex;
-  gap: 0.5rem;
-  align-items: center;
+  flex-direction: column;
+  gap: 15px;
 }
 
-#symbolError {
-  display: none;
-  color: #ff4e4e;
-  font-size: 0.85rem;
+.sidebar h2 {
+  margin-top: 0;
+  font-size: 20px;
+  color: #66f;
 }
 
-.profile-menu {
-  text-align: right;
+.portfolio {
+  background-color: #1e1e25;
+  padding: 12px;
+  border-radius: 8px;
 }
 
-.account-details {
-  font-size: 0.95rem;
-  color: white;
-  font-weight: bold;
-}
-
-.balance-status {
-  font-size: 0.85rem;
+.portfolio h3 {
+  margin: 6px 0;
+  font-size: 14px;
   color: #aaa;
 }
 
-#statusIndicator {
-  margin-left: 0.5rem;
-  color: #17d4fc;
+.portfolio p, .balance-value {
+  font-size: 16px;
   font-weight: bold;
+  color: #0f0;
 }
 
-.container {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  height: calc(100vh - 60px);
+/* Upload and Selector */
+.label-upload {
+  background-color: #333;
+  color: #ccc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-block;
 }
 
-.sidebar {
-  background: #151515;
-  padding: 1rem;
-  border-right: 1px solid #2c2c2c;
+.upload-input {
+  display: none;
 }
 
-.sidebar h3, .sidebar h4 {
-  margin-top: 0;
-  border-bottom: 1px solid #444;
-  padding-bottom: 0.5rem;
+.upload-btn,
+.sidebar button,
+#symbol-selector {
+  background-color: #3d3dff;
+  color: white;
+  border: none;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-top: 6px;
+  transition: background 0.2s ease;
 }
 
-.indicator-value {
-  margin-bottom: 0.5rem;
-  font-size: 0.95rem;
+.upload-btn:hover,
+.sidebar button:hover,
+#symbol-selector:hover {
+  background-color: #5757ff;
 }
 
-.main {
-  padding: 1rem;
+#symbol-selector {
+  width: 100%;
+}
+
+/* Main Panel */
+.main-panel {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  padding: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #1a1a20;
+  padding: 10px 20px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.chart-container {
+  flex: 1;
+  background-color: #18181e;
+  border-radius: 12px;
+  padding: 15px;
+  position: relative;
 }
 
 canvas {
-  background: #111;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Chat Panel */
+#chat-panel {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  width: 300px;
+  max-height: 400px;
+  background-color: #222;
   border-radius: 10px;
-  border: 1px solid #2c2c2c;
+  display: none;
+  flex-direction: column;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.5);
+  z-index: 999;
 }
 
-.controls {
-  display: flex;
-  gap: 1rem;
-}
-
-button {
-  padding: 0.6rem 1rem;
-  border-radius: 6px;
-  border: none;
+#chat-panel header {
+  background-color: #333;
+  padding: 10px;
   font-weight: bold;
-  font-size: 0.95rem;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+}
+
+#chat-messages {
+  flex: 1;
+  padding: 10px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+#chat-input {
+  display: flex;
+  border-top: 1px solid #444;
+}
+
+#chat-input input {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  background: #111;
+  color: #fff;
+  border-bottom-left-radius: 10px;
+}
+
+#chat-input button {
+  padding: 8px 12px;
+  background: #3d3dff;
+  color: white;
+  border: none;
+  border-bottom-right-radius: 10px;
   cursor: pointer;
 }
 
-.start-btn {
-  background-color: #28a745;
-  color: white;
+/* Floating Trade Buttons */
+#trade-buttons {
+  display: flex;
+  gap: 10px;
 }
 
-.start-btn.running {
-  background-color: #ffc107;
-  color: black;
+#trade-buttons button {
+  background-color: #1e1e2e;
+  border: 2px solid #444;
+  color: #fff;
+  padding: 12px 20px;
+  font-size: 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
 }
 
-.stop-btn {
-  background-color: #dc3545;
-  color: white;
+#trade-buttons button:hover {
+  background-color: #2d2d3a;
+  transform: scale(1.05);
 }
 
-.stop-btn.stopped {
-  background-color: #6c757d;
+#trade-buttons button:nth-child(1) { border-color: #0f0; color: #0f0; }
+#trade-buttons button:nth-child(2) { border-color: #f00; color: #f00; }
+#trade-buttons button:nth-child(3) { border-color: #aaa; color: #aaa; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  #dashboard {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .main-panel {
+    padding: 10px;
+  }
+
+  #chat-panel {
+    width: 100%;
+    right: 0;
+  }
+
+  #trade-buttons {
+    bottom: 10px;
+    flex-wrap: wrap;
+  }
 }
