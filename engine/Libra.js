@@ -157,7 +157,7 @@ export async function loadSparseWeightsFromZip(model, zipPath, type = 'hunter') 
 }
 
 // Flash Urgency Signal Detection
-function flashUrgency(prices, threshold = 3.5) {
+export function flashUrgency(prices, threshold = 3.5) {
   if (prices.length < 5) return false;
   const diffs = prices.slice(-5).map((v, i, arr) => i ? Math.abs(v - arr[i - 1]) : 0).slice(1);
   const urgency = diffs.reduce((a, b) => a + b, 0);
@@ -185,7 +185,7 @@ function reflexDecision({ prediction, confidence }, prices) {
 }
 
 // Run Prediction Pipeline
-async function runPrediction(prices) {
+export async function runPrediction(prices) {
   if (!hunterModel || prices.length === 0) {
     return { action: 'hold', confidence: 0, reason: 'invalid_model_or_input' };
   }
@@ -204,7 +204,7 @@ async function runPrediction(prices) {
 }
 
 // Export Training Result as ZIP
-async function exportTrainingResult() {
+export async function exportTrainingResult() {
   try {
     const modelDir = '/tmp/model/hunter';
     const zip = new AdmZip();
