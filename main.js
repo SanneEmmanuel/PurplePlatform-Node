@@ -9,7 +9,7 @@ import multer from 'multer';
 import axios from 'axios';
 import fs from 'fs/promises';
 import WebSocket from 'ws';
-import * as deriv from './deriv.js';  // Changed to namespace import
+import * as deriv from './deriv.js';
 import { runPrediction, lastAnalysisResult, loadSparseWeightsFromZip } from './engine/Libra.js';
 
 // --------- Config ---------
@@ -18,13 +18,15 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.WebSocketServer({ server });  // Fixed WebSocket server initialization
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = '/tmp';
 const WS_UPDATE_INTERVAL = 3000;
 
 // --------- Middleware ---------
-app.use(cors(), express.json(), express.static(path.join(__dirname, 'public')));
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 const upload = multer({ 
   storage: multer.diskStorage({
@@ -141,7 +143,6 @@ async function tradingLogic() {
       
       if (proposal?.proposal?.id) {
         await deriv.buyContract(proposal.proposal.id, proposal.proposal.ask_price);
-        console.log(`[TRADE] Executed ${contractType} position`);
         broadcast({ type: 'trade', contract: proposal.proposal });
       }
     }
