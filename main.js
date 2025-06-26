@@ -8,7 +8,7 @@ import cors from 'cors';
 import multer from 'multer';
 import axios from 'axios';
 import fs from 'fs';
-import { Server as WebSocketServer } from 'ws';
+import ws from 'ws';
 import deriv from './deriv.js';
 import {
   runPrediction,
@@ -22,6 +22,7 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+const { Server: WebSocketServer } = ws;
 const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 3000;
 
