@@ -1,5 +1,5 @@
-// main.js - PurpleBot server
-//Dr Sanne Karibo
+// main.js - PurpleBot server (Updated)
+// Dr Sanne Karibo
 import express from 'express';
 import fileUpload from 'express-fileupload';
 import axios from 'axios';
@@ -14,12 +14,15 @@ import {
   requestTradeProposal, buyContract,
   getCurrentPrice, getLast100Ticks,
   getAccountBalance, getAccountInfo,
-  getTicksForTraining
+  getTicksForTraining,
+  reconnectWithNewSymbol,
+  getAvailableSymbols,
+  closedContracts
 } from './deriv.js';
 
 import {
   runPrediction, lastAnalysisResult,
-  loadSparseWeightsFromZip
+  loadSparseWeightsFromZip, ready as libraReady
 } from './engine/Libra.js';
 
 dotenv.config();
@@ -109,18 +112,55 @@ const handleTrade = (type) => async (_, res) => {
 app.post('/api/trade-buy', handleTrade('CALL'));
 app.post('/api/trade-sell', handleTrade('PUT'));
 
-app.post('/api/close-trades', (_, res) => {
-  res.json({ message: 'Manual close-trade not implemented.' });
+app.post('/api/close-trades', async (_, res) => {
+  try {
+    let closed = 0;
+    for (const [id, contract] of closedContracts) {
+      closedContracts.delete(id);
+      closed++;
+    }
+    res.json({ message: `Manually cleared ${closed} closed trades.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Data Endpoints
+// Data Endpoints (wait for readiness)
+let derivReady = false;
+const waitUntilReady = async () => {
+  while (!derivReady || !libraReady) {
+    await new Promise(r => setTimeout(r, 500));
+  }
+};
+
+app.get('/chart-data', async (_, res) => {
+  try {
+    await waitUntilReady();
+    res.json(await getTicksForTraining(300));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/analysis', (_, res) => {
   res.json(lastAnalysisResult || { message: 'No analysis yet' });
 });
 
-app.get('/chart-data', async (_, res) => {
+// Symbol Management
+app.get('/api/symbols', async (_, res) => {
   try {
-    res.json(await getTicksForTraining(300));
+    res.json(getAvailableSymbols());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/set-symbol', async (req, res) => {
+  try {
+    const { symbol } = req.body;
+    if (!symbol) return res.status(400).json({ error: 'Missing symbol' });
+    await reconnectWithNewSymbol(symbol);
+    res.json({ message: 'Symbol changed', symbol });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -128,7 +168,7 @@ app.get('/chart-data', async (_, res) => {
 
 // Chat
 app.post('/chat', (req, res) => {
-  res.json({ response: `Libra: You said "${req.body.message}"` });
+  res.json({ response: `Hello I'm Libra, You said "${req.body.message}"` });
 });
 
 // File Handling
@@ -165,6 +205,11 @@ app.post('/action/upload-link', async (req, res) => {
 // Keep server alive
 app.get('/awake', (_, res) => res.send('✅ Awake'));
 setInterval(() => axios.get(`http://localhost:${PORT}/awake`).catch(() => {}), 8.4e5);
+
+// Deriv Ready Checker (for startup gate)
+import('./deriv.js').then(() => {
+  derivReady = true;
+});
 
 // Start
 app.listen(PORT, () => {
