@@ -2,7 +2,7 @@
   "name": "purplebot",
   "version": "4.0.1",
   "description": "PurpleBot by Dr. Sanne Karibo — AI Trading Dashboard with TensorFlow & Deriv API",
-  "main": "main.cjs",
+  "main": "main.js",
   "type": "module",
   "scripts": {
     "start": "node main.js",
