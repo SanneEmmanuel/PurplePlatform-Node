@@ -20,7 +20,7 @@ import {
 import {
   runPrediction, lastAnalysisResult,
   loadSparseWeightsFromZip
-} from './engine/libra.js';
+} from './engine/Libra.js';
 
 dotenv.config();
 const app = express();
