@@ -14,7 +14,7 @@ import {
   requestTradeProposal, buyContract,
   getCurrentPrice, getLast100Ticks,
   getAccountBalance, getAccountInfo,
-  getLast300Ticks
+  getTicksForTraining
 } from './deriv.js';
 
 import {
@@ -76,7 +76,7 @@ app.get('/status', async (req, res) => {
 
 // Trading Control
 const tradingCycle = async () => {
-  const prices = await getLast100Ticks();
+  const prices = await getTicksForTraining(300);
   const { action } = await runPrediction(prices);
   if (action === 'buy' || action === 'sell') {
     await placeTrade(action === 'buy' ? 'CALL' : 'PUT');
@@ -120,7 +120,7 @@ app.get('/api/analysis', (_, res) => {
 
 app.get('/chart-data', async (_, res) => {
   try {
-    res.json(await getLast300Ticks());
+    res.json(await getTicksForTraining(300));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
