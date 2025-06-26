@@ -165,14 +165,20 @@ function handleMessage(message) {
 
   switch (data.msg_type) {
     case 'authorize':
-      const auth = data.authorize;
-      accountInfo = {
-        loginid: auth.loginid,
-        currency: auth.currency,
-        is_virtual: auth.is_virtual,
-        email: auth.email,
-        fullname: auth.fullname || ''
-      };
+  if (data.error) {
+    console.error('[❌] Authorization failed:', data.error.message);
+    break;
+  }
+  const auth = data.authorize;
+  accountInfo = {
+    loginid: auth.loginid,
+    currency: auth.currency,
+    is_virtual: auth.is_virtual,
+    email: auth.email,
+    fullname: auth.fullname || ''
+  };
+  break;
+
       break;
 
     case 'balance':
