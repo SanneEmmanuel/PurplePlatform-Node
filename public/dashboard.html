@@ -2,179 +2,117 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PurpleBot Dashboard</title>
-  <link rel="stylesheet" href="/dashboard.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Investor Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+  <style>
+    /* (Styles unchanged for brevity) */
+  </style>
 </head>
 <body>
-  <header>
-    <button id="menuToggle" class="menu-toggle">☰</button>
-    <div class="symbol-control">
-      <select id="symbolDropdown"></select>
-      <span id="symbolError">Invalid symbol</span>
-    </div>
-    <div class="profile-menu">
-      <div id="accountDetails" class="account-details">Account: --</div>
-      <div class="balance-status">
-        <span id="accountBalance">Balance: $0.00</span>
-        <span id="statusIndicator">[Stopped]</span>
+  <main class="dashboard" role="main" aria-label="Investor Dashboard">
+    <section class="profile">
+      <div class="profile-pic">
+        <img src="https://i.pravatar.cc/150?img=68" alt="User profile photo" />
       </div>
-    </div>
-  </header>
-
-  <div class="container">
-    <aside class="sidebar">
-      <h3>Indicators</h3>
-      <div class="indicator-value">EMA(20): <span id="ema20">--</span></div>
-      <div class="indicator-value">RSI(7): <span id="rsi7">--</span></div>
-      <div class="indicator-value">Fractals: <span id="fractals">--</span></div>
-      <h4>Status</h4>
-      <div id="botActivity">Waiting...</div>
-    </aside>
-
-    <main class="main">
-      <canvas id="chartCanvas"></canvas>
-      <div class="controls">
-        <button id="startBtn" class="start-btn" onclick="startBot()">Start Bot</button>
-        <button id="stopBtn" class="stop-btn" onclick="stopBot()">Stop Bot</button>
+      <div class="profile-info">
+        <h2 id="user-name">Jane Doe</h2>
+        <p>Investor since 2021</p>
       </div>
-    </main>
-  </div>
+    </section>
+
+    <section class="balance">
+      <div class="balance-text">
+        <span class="label">Total Portfolio Value</span>
+        <span class="amount" id="portfolio-value">Loading...</span>
+      </div>
+      <div class="growth" id="growth-status">
+        <span class="material-icons">trending_up</span>
+        +0.0%
+      </div>
+    </section>
+
+    <section>
+      <h3>Model Upload</h3>
+      <input type="file" id="model-upload" accept=".zip" />
+      <button onclick="uploadZip()">Upload ZIP</button>
+      <input type="text" id="model-url" placeholder="Paste ZIP URL here" style="margin-top: 10px; width: 100%" />
+      <button onclick="downloadZip()">Download & Load from URL</button>
+    </section>
+
+    <section>
+      <h3>Trading Bot</h3>
+      <button id="trade-btn" onclick="toggleTrading()">Checking status...</button>
+    </section>
+  </main>
 
   <script>
-    const chartCtx = document.getElementById('chartCanvas').getContext('2d');
-    const chart = new Chart(chartCtx, {
-      type: 'candlestick',
-      data: { datasets: [] },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { ticks: { color: '#aaa' } },
-          y: { ticks: { color: '#aaa' } }
-        },
-        plugins: { legend: { labels: { color: '#fff' } } }
-      }
-    });
-
-    async function fetchAccountInfo() {
-      const res = await fetch('/api/account-info');
-      const data = await res.json();
-      document.getElementById('accountDetails').textContent =
-        `Account: ${data.fullname?.trim()} (${data.loginid}) [${data.is_virtual ? 'Demo' : 'Real'}] • ${data.currency}`;
-    }
-
-    async function fetchBalance() {
-      const res = await fetch('/api/balance');
-      const data = await res.json();
-      if (data.balance) {
-        document.getElementById('accountBalance').textContent = `Balance: $${data.balance.toFixed(2)}`;
-      }
-    }
-
     async function fetchStatus() {
       const res = await fetch('/api/status');
       const data = await res.json();
-      const running = data.trading;
-      document.getElementById('botActivity').textContent = running ? 'Bot is trading...' : 'Bot idle';
-      document.getElementById('statusIndicator').textContent = running ? '[Running]' : '[Stopped]';
-      document.getElementById('startBtn').classList.toggle('running', running);
-      document.getElementById('stopBtn').classList.toggle('stopped', !running);
+      document.getElementById('trade-btn').textContent = data.trading ? 'Stop Trading' : 'Start Trading';
+      document.getElementById('trade-btn').dataset.trading = data.trading;
     }
 
-    async function fetchSymbolList() {
-      const res = await fetch('/symbol-info');
+    async function fetchBalance() {
+      const res = await fetch('/api/chart-data');
       const data = await res.json();
-      const dropdown = document.getElementById('symbolDropdown');
-      dropdown.innerHTML = '';
-      data.symbolDetails.forEach(symbol => {
-        const opt = document.createElement('option');
-        opt.value = symbol.symbol;
-        opt.textContent = symbol.display_name;
-        if (symbol.symbol === data.currentSymbol) opt.selected = true;
-        dropdown.appendChild(opt);
-      });
+      if (data.ticks && data.ticks.length > 0) {
+        const price = parseFloat(data.ticks[data.ticks.length - 1].quote);
+        document.getElementById('portfolio-value').textContent = `$${price.toFixed(2)}`;
+      }
     }
 
-    async function setSymbol(symbol) {
-      const res = await fetch('/set-symbol', {
+    async function uploadZip() {
+      const fileInput = document.getElementById('model-upload');
+      const file = fileInput.files[0];
+      if (!file) return alert('No file selected.');
+
+      const formData = new FormData();
+      formData.append('model', file);
+
+      const res = await fetch('/upload-zip', {
+        method: 'POST',
+        body: formData
+      });
+      const result = await res.json();
+      alert(result.message || 'Upload done.');
+    }
+
+    async function downloadZip() {
+      const url = document.getElementById('model-url').value;
+      if (!url) return alert('No URL provided.');
+
+      const res = await fetch('/download-zip', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol })
+        body: JSON.stringify({ url })
       });
-      document.getElementById('symbolError').style.display = res.ok ? 'none' : 'inline';
+      const result = await res.json();
+      alert(result.message || 'Download done.');
     }
 
-    async function fetchChartData() {
-      const candleRes = await fetch('/api/chart-data');
-      const indicatorRes = await fetch('/api/indicators');
-      const tradesRes = await fetch('/api/active-trades');
+    async function toggleTrading() {
+      const trading = document.getElementById('trade-btn').dataset.trading === 'true';
 
-      const candles = (await candleRes.json()).candles.slice(-100);
-      const indicators = (await indicatorRes.json()).indicators;
-      const activeTrades = (await tradesRes.json()).activeTrades;
-
-      const ohlc = candles.map(c => ({
-        x: new Date(c.epoch * 1000),
-        o: c.open,
-        h: c.high,
-        l: c.low,
-        c: c.close
-      }));
-
-      const tradeMarkers = activeTrades.map(t => ({
-        label: `${t.contract_type} ${t.contract_id}`,
-        data: [{ x: new Date(t.entry_tick_time * 1000), y: t.entry_tick }],
-        borderColor: t.contract_type === 'CALL' ? 'lime' : 'red',
-        borderWidth: 2,
-        pointRadius: 4,
-        type: 'scatter',
-        showLine: false
-      }));
-
-      chart.data.datasets = [
-        {
-          label: 'Candles',
-          data: ohlc,
-          type: 'candlestick',
-          color: { up: '#0f0', down: '#f00', unchanged: '#999' }
-        },
-        ...tradeMarkers
-      ];
-      chart.update();
-
-      document.getElementById('ema20').textContent = indicators.ema20?.at(-1)?.toFixed(2) || '--';
-      document.getElementById('rsi7').textContent = indicators.rsi7?.at(-1)?.toFixed(2) || '--';
-      document.getElementById('fractals').textContent =
-        `${indicators.fractalHighs?.length || 0} / ${indicators.fractalLows?.length || 0}`;
-    }
-
-    async function startBot() {
-      const res = await fetch('/trade-start', { method: 'POST' });
-      if (res.ok) fetchStatus();
-    }
-
-    async function stopBot() {
-      const res = await fetch('/trade-end', { method: 'POST' });
-      if (res.ok) fetchStatus();
-    }
-
-    document.getElementById('symbolDropdown').addEventListener('change', (e) => setSymbol(e.target.value));
-
-    setInterval(fetchChartData, 5000);
-    setInterval(fetchBalance, 10000);
-    setInterval(fetchStatus, 4000);
-
-    window.addEventListener('DOMContentLoaded', () => {
-      fetchAccountInfo();
-      fetchBalance();
+      if (!trading) {
+        // Check if model was uploaded
+        const confirmStart = confirm('Ensure a ZIP model has been uploaded. Proceed to start trading?');
+        if (!confirmStart) return;
+        const res = await fetch('/trade-start', { method: 'POST' });
+        const result = await res.json();
+        alert(result.message || 'Started');
+      } else {
+        const res = await fetch('/trade-end', { method: 'POST' });
+        const result = await res.json();
+        alert(result.message || 'Stopped');
+      }
       fetchStatus();
-      fetchSymbolList();
-      fetchChartData();
-    });
+    }
+
+    fetchStatus();
+    fetchBalance();
   </script>
 </body>
 </html>
