@@ -54,7 +54,10 @@ wss.on('connection', ws => {
     .catch(console.error);
 
   const interval = setInterval(update, WS_UPDATE_INTERVAL);
-  ws.on('close', () => (activeConnections.delete(ws), clearInterval(interval));
+  ws.on('close', () => {
+    activeConnections.delete(ws);
+    clearInterval(interval);
+  });
   update();
 });
 
@@ -74,7 +77,7 @@ app.get('/analysis', handleAsync(async (_, res) =>
 
 app.post('/api/predict', handleAsync(async (_, res) => 
   res.json(await runPrediction(await deriv.getTicksForTraining(300)))
-);
+));
 
 app.post('/chat', handleAsync(async ({ body: { prompt = '' } }, res) => 
   res.json({ 
