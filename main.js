@@ -1,4 +1,4 @@
-// main.js — Optimized PurpleBot Server with Libra AI + Zip Upload/Download + TinyLlama
+// main.js — Optimized PurpleBot Server
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,167 +7,149 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import multer from 'multer';
 import axios from 'axios';
-import fs from 'fs';
-import ws from 'ws';
+import fs from 'fs/promises';
+import WebSocket from 'ws';
 import deriv from './deriv.js';
-import {
-  runPrediction,
-  lastAnalysisResult,
-  loadSparseWeightsFromZip
-} from './engine/Libra.js';
+import { runPrediction, lastAnalysisResult, loadSparseWeightsFromZip } from './engine/Libra.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// --------- Config ---------
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const { Server: WebSocketServer } = ws;
-const wss = new WebSocketServer({ server });
+const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 3000;
+const UPLOAD_DIR = '/tmp';
+const WS_UPDATE_INTERVAL = 3000;
 
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-const upload = multer({ dest: '/tmp' });
+// --------- Middleware ---------
+app.use(cors(), express.json(), express.static(path.join(__dirname, 'public')));
 
-let botLoop = null, isTrading = false;
-
-// WebSocket: broadcast market state every 3s
-wss.on('connection', (ws) => {
-  const i = setInterval(async () => {
-    try {
-      const ticks = await deriv.getTicksForTraining(300);
-      ws.send(JSON.stringify({
-        type: 'update',
-        ticks,
-        trading: isTrading,
-        balance: deriv.getAccountBalance(),
-        trades: {
-          active: [...deriv.openContracts.values()],
-          closed: [...deriv.closedContracts.values()]
-        }
-      }));
-    } catch (err) {
-      console.error('[WS Error]', err.message);
-    }
-  }, 3000);
-  ws.on('close', () => clearInterval(i));
+const upload = multer({ 
+  storage: multer.diskStorage({
+    destination: UPLOAD_DIR,
+    filename: (_, file, cb) => cb(null, `model_${Date.now()}${path.extname(file.originalname)}`)
+  })
 });
+
+// --------- State Management ---------
+let botLoop = null;
+const activeConnections = new Set();
+
+// --------- WebSocket ---------
+wss.on('connection', ws => {
+  activeConnections.add(ws);
+  const update = () => deriv.getTicksForTraining(300)
+    .then(ticks => ws.send(JSON.stringify({
+      type: 'update',
+      ticks,
+      trading: !!botLoop,
+      balance: deriv.getAccountBalance(),
+      trades: {
+        active: [...deriv.openContracts.values()],
+        closed: [...deriv.closedContracts.values()]
+      }
+    })))
+    .catch(console.error);
+
+  const interval = setInterval(update, WS_UPDATE_INTERVAL);
+  ws.on('close', () => (activeConnections.delete(ws), clearInterval(interval));
+  update();
+});
+
+// --------- Helpers ---------
+const handleAsync = fn => (req, res) => fn(req, res).catch(e => 
+  res.status(500).json({ error: 'Operation failed', details: e.message })
+);
+
+const broadcast = data => activeConnections.forEach(ws => 
+  ws.send(JSON.stringify(data))
+);
 
 // --------- Routes ---------
+app.get('/analysis', handleAsync(async (_, res) => 
+  res.json(lastAnalysisResult || await runPrediction(await deriv.getTicksForTraining(300)))
+));
 
-app.get('/analysis', async (req, res) => {
-  try {
-    if (!lastAnalysisResult) {
-      const ticks = await deriv.getTicksForTraining(300);
-      const r = await runPrediction(ticks);
-      return res.json(r);
-    }
-    res.json(lastAnalysisResult);
-  } catch (e) {
-    res.status(500).json({ error: 'Analysis failed' });
+app.post('/api/predict', handleAsync(async (_, res) => 
+  res.json(await runPrediction(await deriv.getTicksForTraining(300)))
+);
+
+app.post('/chat', handleAsync(async ({ body: { prompt = '' } }, res) => 
+  res.json({ 
+    reply: (await axios.post(
+      'http://localhost:11434/api/generate', 
+      { model: 'tinyllama', prompt, stream: false },
+      { timeout: 10000 }
+    )).data.response 
+  })
+));
+
+app.post('/upload-zip', upload.single('model'), handleAsync(async ({ file }, res) => {
+  if (!file) throw new Error('No file uploaded');
+  await loadSparseWeightsFromZip(null, file.path);
+  res.json({ message: 'Model uploaded and loaded' });
+}));
+
+app.post('/download-zip', handleAsync(async ({ body: { url } }, res) => {
+  if (!url) throw new Error('URL required');
+  const zipPath = path.join(UPLOAD_DIR, `model_${Date.now()}.zip`);
+  const { data } = await axios.get(url, { responseType: 'arraybuffer', timeout: 15000 });
+  await fs.writeFile(zipPath, data);
+  await loadSparseWeightsFromZip(null, zipPath);
+  res.json({ message: 'Model downloaded and loaded' });
+}));
+
+// --------- Trading Controls ---------
+const toggleTrading = (start, res) => {
+  if (start === !!botLoop) return res.status(409).json({ error: `Bot already ${start ? 'running' : 'stopped'}` });
+  
+  if (start) {
+    botLoop = setInterval(tradingLogic, 10000);
+    tradingLogic();
+  } else {
+    clearInterval(botLoop);
+    botLoop = null;
   }
-});
 
-app.post('/api/predict', async (req, res) => {
-  try {
-    const ticks = await deriv.getTicksForTraining(300);
-    res.json(await runPrediction(ticks));
-  } catch (e) {
-    res.status(500).json({ error: 'Prediction failed' });
-  }
-});
+  broadcast({ type: 'status', trading: start });
+  res.json({ message: `Bot ${start ? 'started' : 'stopped'}` });
+};
 
-app.post('/chat', async (req, res) => {
-  try {
-    const { prompt = '' } = req.body;
-    const { data } = await axios.post('http://localhost:11434/api/generate', {
-      model: 'tinyllama', prompt, stream: false
-    });
-    res.json({ reply: data.response });
-  } catch (e) {
-    res.status(500).json({ error: 'Chat failed' });
-  }
-});
+app.post('/trade-start', (_, res) => toggleTrading(true, res));
+app.post('/trade-end', (_, res) => toggleTrading(false, res));
 
-app.post('/upload-zip', upload.single('model'), async (req, res) => {
-  try {
-    await loadSparseWeightsFromZip(null, req.file.path);
-    res.json({ message: 'ZIP uploaded and loaded' });
-  } catch (e) {
-    res.status(500).json({ error: 'Upload failed' });
-  }
-});
-
-app.post('/download-zip', async (req, res) => {
-  try {
-    const { url } = req.body;
-    const zipPath = `/tmp/model_${Date.now()}.zip`;
-    const writer = fs.createWriteStream(zipPath);
-    const response = await axios({ method: 'get', url, responseType: 'stream' });
-    response.data.pipe(writer);
-    writer.on('finish', async () => {
-      await loadSparseWeightsFromZip(null, zipPath);
-      res.json({ message: 'ZIP downloaded and loaded' });
-    });
-    writer.on('error', e => {
-      console.error('[❌] Write error', e.message);
-      res.status(500).json({ error: 'Download failed' });
-    });
-  } catch (e) {
-    res.status(500).json({ error: 'Download failed' });
-  }
-});
-
-app.post('/trade-start', (req, res) => {
-  if (botLoop) return res.status(409).json({ error: 'Bot already running' });
-  isTrading = true;
-  botLoop = setInterval(tradingLogic, 10000);
-  res.json({ message: 'Bot started' });
-});
-
-app.post('/trade-end', (req, res) => {
-  if (!botLoop) return res.status(409).json({ error: 'Bot not running' });
-  clearInterval(botLoop);
-  isTrading = false;
-  botLoop = null;
-  res.json({ message: 'Bot stopped' });
-});
-
-app.get('/api/status', (req, res) => {
-  res.json({ trading: isTrading, openContracts: deriv.openContracts.size });
-});
-
-app.get('/api/chart-data', async (req, res) => {
-  try {
-    res.json({ ticks: await deriv.getTicksForTraining(300) });
-  } catch (e) {
-    res.status(500).json({ error: 'Chart data error' });
-  }
-});
-
-// --------- Trading Core ---------
+// --------- Core Trading Logic ---------
 async function tradingLogic() {
   try {
-    const ticks = await deriv.getTicksForTraining(300);
-    const r = await runPrediction(ticks);
-    if (r?.action === 'TRADE') {
-      const { direction, size } = r.reflex;
-      const contractType = direction > 0 ? 'CALL' : 'PUT';
-      const p = await deriv.requestTradeProposal(contractType, size * 10, 5);
-      if (p?.proposal?.id) {
-        await deriv.buyContract(p.proposal.id, p.proposal.ask_price);
-        console.log(`[✅] ${contractType} executed`);
-      }
-    } else {
-      console.log('[⌛] No trade — waiting');
+    const { action, reflex } = await runPrediction(await deriv.getTicksForTraining(300));
+    if (action !== 'TRADE') return;
+
+    const contractType = reflex.direction > 0 ? 'CALL' : 'PUT';
+    const proposal = await deriv.requestTradeProposal(contractType, reflex.size * 10, 5);
+    
+    if (proposal?.proposal?.id) {
+      await deriv.buyContract(proposal.proposal.id, proposal.proposal.ask_price);
+      broadcast({ type: 'trade', contract: proposal.proposal });
     }
   } catch (e) {
-    console.error('[Trade Loop Error]', e.message);
+    console.error('[TRADING ERROR]', e.message);
   }
 }
 
+// --------- Server Start ---------
 server.listen(PORT, () => {
-  console.log(`[✅] PurpleBot backend running → http://localhost:${PORT}`);
+  console.log(`
+  [🚀] PurpleBot AI Trading System
+  [📡] WebSocket: ws://localhost:${PORT}
+  [🌐] HTTP: http://localhost:${PORT}
+  [💰] Deriv API: ${deriv.isConnected ? 'Connected' : 'Disconnected'}`);
+
+  process.on('SIGTERM', () => {
+    console.log('Shutting down gracefully...');
+    botLoop && clearInterval(botLoop);
+    wss.close();
+    server.close();
+  });
 });
