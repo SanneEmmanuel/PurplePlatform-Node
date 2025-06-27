@@ -1,3 +1,4 @@
+// deriv.js - Modular Deriv WebSocket API Client
 import WebSocket from 'ws';
 import { promises as fs } from 'fs';
 import dotenv from 'dotenv';
@@ -20,6 +21,7 @@ let availableSymbols = [], symbolDetails = [], contractSpecs = {};
 let onInvalidSymbol, conn = null, isConnecting = false, retries = 0, msgId = 1;
 const callbacks = new Map();
 
+// Helpers
 const save = (f, d) => fs.writeFile(`${TMP}/${f}`, JSON.stringify(d, null, 2));
 const load = async f => {
   try { return JSON.parse(await fs.readFile(`${TMP}/${f}`)); } catch { return null; }
@@ -162,7 +164,6 @@ async function requestContractProposal(type, amount, duration, unit = 'm', basis
   return new Promise(res => send(payload, res));
 }
 
-// 🔍 Auto-discover contract types with barrier/digit requirements
 async function getAvailableContracts(symbol = getSymbol()) {
   ensureAuth();
   return new Promise((resolve, reject) => {
@@ -188,7 +189,6 @@ async function getAvailableContracts(symbol = getSymbol()) {
   });
 }
 
-// 🛠 Pre-built functions
 const requestCALLProposal = (...args) => requestContractProposal('CALL', ...args);
 const requestPUTProposal = (...args) => requestContractProposal('PUT', ...args);
 const requestHIGHERProposal = (...args) => requestContractProposal('HIGHER', ...args);
@@ -201,9 +201,21 @@ const buyContract = (proposal_id, price) => {
 
 const trackContract = id => send({ open_contract: 1, contract_id: id, subscribe: 1 });
 
-const disconnect = () => conn?.readyState === 1 && conn.close(1000, 'Bye');
-const reconnectWithNewSymbol = sym => setRuntimeConfig('SYMBOL', sym), disconnect(), connect();
-const reconnectWithNewToken = token => setRuntimeConfig('API_TOKEN', token), disconnect(), connect();
+function disconnect() {
+  if (conn?.readyState === 1) conn.close(1000, 'Bye');
+}
+
+async function reconnectWithNewSymbol(sym) {
+  setRuntimeConfig('SYMBOL', sym);
+  disconnect();
+  await connect();
+}
+
+async function reconnectWithNewToken(token) {
+  setRuntimeConfig('API_TOKEN', token);
+  disconnect();
+  await connect();
+}
 
 const getCurrentPrice = async () => {
   ensureAuth(); await waitReady();
@@ -242,7 +254,7 @@ const getTicksForTraining = async count => {
 process.on('SIGINT', () => { disconnect(); process.exit(); });
 connect();
 
-// ✅ Exports
+// ✅ Export API
 export {
   requestContractProposal,
   buyContract,
@@ -255,7 +267,8 @@ export {
   requestCALLProposal,
   requestPUTProposal,
   requestHIGHERProposal,
-  requestLOWERProposal
+  requestLOWERProposal,
+  disconnect
 };
 
 export const getAccountBalance = () => accountBalance;
