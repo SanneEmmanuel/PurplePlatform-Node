@@ -17,7 +17,9 @@ import {
   getTicksForTraining,
   reconnectWithNewSymbol,
   getAvailableSymbols,
-  closedContracts
+  closedContracts,
+  getAvailableContracts,
+  requestContractProposal
 } from './deriv.js';
 
 import {
@@ -31,13 +33,13 @@ const PORT = process.env.PORT || 3000;
 const WSPORT = 3001;
 const TMP_DIR = '/tmp';
 let trading = false, tradingLoop = null;
+let selectedTrade = 'CALL';
 
 app.use(cors());
 app.use(express.json());
 app.use(fileUpload());
 app.use(express.static('public'));
 
-// Helpers
 const getAccountStatus = async () => {
   const [info, bal, price] = await Promise.all([
     getAccountInfo(),
@@ -49,7 +51,8 @@ const getAccountStatus = async () => {
     accountNumber: info.loginid || '',
     accountBalance: bal || 0,
     currentPrice: price || 0,
-    tradingStatus: trading ? 'active' : 'inactive'
+    tradingStatus: trading ? 'active' : 'inactive',
+    selectedTrade
   };
 };
 
@@ -58,7 +61,6 @@ const placeTrade = async (type) => {
   buyContract(prop.proposal.id, 1);
 };
 
-// WebSocket Stream
 const wss = new WebSocketServer({ port: WSPORT });
 wss.on('connection', ws => {
   console.log('[WS] Connected');
@@ -72,17 +74,15 @@ wss.on('connection', ws => {
   ws.on('close', () => clearInterval(loop));
 });
 
-// Status
 app.get('/status', async (req, res) => {
   res.json(await getAccountStatus());
 });
 
-// Trading Control
 const tradingCycle = async () => {
   const prices = await getTicksForTraining(300);
   const { action } = await runPrediction(prices);
   if (action === 'buy' || action === 'sell') {
-    await placeTrade(action === 'buy' ? 'CALL' : 'PUT');
+    await placeTrade(selectedTrade);
   }
 };
 
@@ -99,7 +99,6 @@ app.post('/trade-end', (_, res) => {
   res.json({ message: 'Trading stopped' });
 });
 
-// Trade Execution
 const handleTrade = (type) => async (_, res) => {
   try {
     await placeTrade(type);
@@ -115,7 +114,7 @@ app.post('/api/trade-sell', handleTrade('PUT'));
 app.post('/api/close-trades', async (_, res) => {
   try {
     let closed = 0;
-    for (const [id, contract] of closedContracts) {
+    for (const [id] of closedContracts) {
       closedContracts.delete(id);
       closed++;
     }
@@ -125,7 +124,6 @@ app.post('/api/close-trades', async (_, res) => {
   }
 });
 
-// Data Endpoints (wait for readiness)
 let derivReady = false;
 const waitUntilReady = async () => {
   while (!derivReady || !libraReady) {
@@ -146,7 +144,6 @@ app.get('/api/analysis', (_, res) => {
   res.json(lastAnalysisResult || { message: 'No analysis yet' });
 });
 
-// Symbol Management
 app.get('/api/symbols', async (_, res) => {
   try {
     res.json(getAvailableSymbols());
@@ -166,12 +163,26 @@ app.post('/api/set-symbol', async (req, res) => {
   }
 });
 
-// Chat
+app.get('/api/check-deals', async (_, res) => {
+  try {
+    const contracts = await getAvailableContracts();
+    res.json(contracts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/set-deals', async (req, res) => {
+  const { trade } = req.body;
+  if (!trade) return res.status(400).json({ error: 'Missing trade type' });
+  selectedTrade = trade.toUpperCase();
+  res.json({ message: `Trade type set to ${selectedTrade}` });
+});
+
 app.post('/chat', (req, res) => {
   res.json({ response: `Hello I'm Libra, You said "${req.body.message}"` });
 });
 
-// File Handling
 const handleZipUpload = async (zipPath, res, successMessage) => {
   try {
     await loadSparseWeightsFromZip(null, zipPath);
@@ -202,16 +213,11 @@ app.post('/action/upload-link', async (req, res) => {
   }
 });
 
-// Keep server alive
 app.get('/awake', (_, res) => res.send('✅ Awake'));
 setInterval(() => axios.get(`http://localhost:${PORT}/awake`).catch(() => {}), 8.4e5);
 
-// Deriv Ready Checker (for startup gate)
-import('./deriv.js').then(() => {
-  derivReady = true;
-});
+import('./deriv.js').then(() => { derivReady = true; });
 
-// Start
 app.listen(PORT, () => {
   console.log(`🟢 http://localhost:${PORT}`);
   console.log(`🌐 ws://localhost:${WSPORT}`);
