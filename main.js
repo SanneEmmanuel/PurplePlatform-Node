@@ -1,5 +1,6 @@
 // main.js - PurpleBot server (Updated)
 // Dr Sanne Karibo
+
 import express from 'express';
 import fileUpload from 'express-fileupload';
 import axios from 'axios';
@@ -11,20 +12,25 @@ import { WebSocketServer } from 'ws';
 import { pipeline } from 'stream/promises';
 
 import {
-  requestTradeProposal, buyContract,
-  getCurrentPrice, getLast100Ticks,
-  getAccountBalance, getAccountInfo,
+  requestContractProposal, // ✅ updated
+  buyContract,
+  getCurrentPrice,
+  getLast100Ticks,
+  getAccountBalance,
+  getAccountInfo,
   getTicksForTraining,
   reconnectWithNewSymbol,
+  reconnectWithNewToken,
   getAvailableSymbols,
   closedContracts,
-  getAvailableContracts,
-  requestContractProposal
+  getAvailableContracts
 } from './deriv.js';
 
 import {
-  runPrediction, lastAnalysisResult,
-  loadSparseWeightsFromZip, ready as libraReady
+  runPrediction,
+  lastAnalysisResult,
+  loadSparseWeightsFromZip,
+  ready as libraReady
 } from './engine/Libra.js';
 
 dotenv.config();
@@ -56,9 +62,17 @@ const getAccountStatus = async () => {
   };
 };
 
-const placeTrade = async (type) => {
-  const prop = await requestTradeProposal(type, 1, 1);
-  buyContract(prop.proposal.id, 1);
+// ✅ Corrected placeTrade using new contract proposal
+const placeTrade = async (tradeType) => {
+  try {
+    const proposal = await requestContractProposal(tradeType, 1, 1); // 1 stake, 1 duration
+    const contract = await buyContract(proposal.id, 1); // buy 1 unit
+    console.log(`[TRADE] ${tradeType} contract bought:`, contract?.buy);
+    return contract;
+  } catch (err) {
+    console.error(`[TRADE ERROR] ${tradeType}:`, err.message);
+    throw err;
+  }
 };
 
 const wss = new WebSocketServer({ port: WSPORT });
@@ -101,8 +115,8 @@ app.post('/trade-end', (_, res) => {
 
 const handleTrade = (type) => async (_, res) => {
   try {
-    await placeTrade(type);
-    res.json({ type: type.toLowerCase(), success: true });
+    const contract = await placeTrade(type);
+    res.json({ type: type.toLowerCase(), success: true, contract });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
