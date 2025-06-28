@@ -8,8 +8,7 @@ import fetch from 'node-fetch';
 import { v2 as cloudinary } from 'cloudinary';
 import archiver from 'archiver';
 
-// Validate Cloudinary config
-import { v2 as cloudinary } from 'cloudinary';
+
 // ⚠️ WARNING: Fake Demo Api Keys Fix in Original Keys before running
 cloudinary.config({
   cloud_name: 'dj4bwntzb',
