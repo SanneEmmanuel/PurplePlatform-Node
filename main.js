@@ -1,227 +1,255 @@
-// main.js - PurpleBot server (Updated)
-// Dr Sanne Karibo
+// main.js - PurpleBot Trading Server
+// Dr. Sanne Karibo - Optimized Version
 
 import express from 'express';
 import fileUpload from 'express-fileupload';
 import axios from 'axios';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
+import { tmpdir } from 'os';
 import { pipeline } from 'stream/promises';
+import { fileURLToPath } from 'url';
 
-import {
-  requestContractProposal,
-  buyContract,
-  getCurrentPrice,
-  getLast100Ticks,
-  getAccountBalance,
-  getAccountInfo,
-  getTicksForTraining,
-  reconnectWithNewSymbol,
-  reconnectWithNewToken,
-  getAvailableSymbols,
-  closedContracts,
-  getAvailableContracts
-} from './deriv.js';
-
-import {
-  runPrediction,
-  lastAnalysisResult,
-  loadSparseWeightsFromZip,
-  ready as libraReady
-} from './engine/Libra.js';
-
+// ========== INITIALIZATION ==========
 dotenv.config();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const TMP_DIR = path.join(tmpdir(), 'purplebot');
+await fs.mkdir(TMP_DIR, { recursive: true });
+
+// ========== MODULE IMPORTS ==========
+const deriv = await import('./deriv.js');
+const engine = await import('./engine/Libra3.js');
+const { 
+  requestContractProposal, buyContract, getCurrentPrice, getTicksForTraining,
+  getAccountBalance, getAccountInfo, reconnectWithNewSymbol, getAvailableSymbols,
+  closedContracts, getAvailableContracts 
+} = deriv;
+const { runPrediction, tradeAdvice, loadSparseWeightsFromZip, isModelReady } = engine;
+
+// ========== APP CONFIGURATION ==========
 const app = express();
 const PORT = process.env.PORT || 3000;
-const TMP_DIR = '/tmp';
-let trading = false, tradingLoop = null;
-let selectedTrade = 'CALL';
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(fileUpload());
 app.use(express.static('public'));
 
-const getAccountStatus = async () => {
-  const [info, bal, price] = await Promise.all([
-    getAccountInfo(),
-    getAccountBalance(),
-    getCurrentPrice().catch(() => 0)
-  ]);
-  return {
-    fullName: info.fullname || '',
-    accountNumber: info.loginid || '',
-    accountBalance: bal || 0,
-    currentPrice: price || 0,
-    tradingStatus: trading ? 'active' : 'inactive',
-    selectedTrade
+// ========== GLOBAL STATE ==========
+const globalState = {
+  trading: {
+    active: false,
+    interval: null,
+    selectedTrade: 'CALL',
+    positionSize: 1,
+    maxPositionSize: 16
+  },
+  lastAdvice: null,
+  lastPrediction: null,
+  marketMetrics: {
+    volatility: 0,
+    trend: 'neutral'
+  }
+};
+
+// ========== HELPER FUNCTIONS ==========
+const calculateVolatility = (prices) => {
+  const changes = prices.slice(1).map((p, i) => Math.abs(p - prices[i]));
+  return changes.reduce((sum, change) => sum + change, 0) / changes.length;
+};
+
+const detectTrend = (prices) => {
+  const first = prices[0];
+  const last = prices[prices.length - 1];
+  return last > first ? 'bullish' : last < first ? 'bearish' : 'neutral';
+};
+
+const updateMarketMetrics = (prices) => {
+  globalState.marketMetrics = {
+    volatility: calculateVolatility(prices),
+    trend: detectTrend(prices),
+    updatedAt: new Date().toISOString()
   };
 };
 
-const placeTrade = async (tradeType) => {
-  try {
-    const proposal = await requestContractProposal(tradeType, 1, 1);
-    const contract = await buyContract(proposal.id, 1);
-    console.log(`[TRADE] ${tradeType} contract bought:`, contract?.buy);
-    return contract;
-  } catch (err) {
-    console.error(`[TRADE ERROR] ${tradeType}:`, err.message);
-    throw err;
-  }
-};
-
-app.get('/chart-live', async (_, res) => {
-  try {
-    const status = await getAccountStatus();
-    res.json(status);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+const getAccountStatus = async () => ({
+  ...(await getAccountInfo()),
+  balance: await getAccountBalance(),
+  price: await getCurrentPrice().catch(() => 0),
+  tradingStatus: globalState.trading.active ? 'active' : 'inactive',
+  position: {
+    type: globalState.trading.selectedTrade,
+    size: globalState.trading.positionSize
   }
 });
 
+const placeTrade = async (tradeType) => {
+  const proposal = await requestContractProposal(tradeType, 1, 1);
+  const contract = await buyContract(proposal.id, 1);
+  console.log(`[TRADE] Executed ${tradeType} at ${contract?.buy?.purchase_time}`);
+  return contract;
+};
 
+// ========== TRADING LOGIC ==========
 const tradingCycle = async () => {
-  const prices = await getTicksForTraining(300);
-  const { action } = await runPrediction(prices);
-  if (action === 'buy' || action === 'sell') {
-    await placeTrade(selectedTrade);
+  try {
+    if (!isModelReady()) {
+      console.warn('[TRADING] Model not ready, skipping cycle');
+      return;
+    }
+    const prices = await getTicksForTraining(300);
+    const prediction = await runPrediction(prices);
+    
+    if (!prediction?.predicted || !prediction?.actuals) {
+      console.warn('[TRADING] Incomplete prediction data');
+      return;
+    }
+
+    // Update global state
+    globalState.lastPrediction = prediction;
+    globalState.lastAdvice = tradeAdvice(
+      prediction.predicted,
+      prediction.actuals,
+      prediction.entryPrice,
+      globalState.trading.positionSize,
+      globalState.trading.maxPositionSize
+    );
+    updateMarketMetrics(prediction.actuals);
+
+    console.log('[TRADING] New advice:', globalState.lastAdvice);
+
+    // Execute trading logic
+    if (globalState.lastAdvice.action === 'add') {
+      await placeTrade(globalState.lastAdvice.direction);
+      globalState.trading.selectedTrade = globalState.lastAdvice.direction;
+      globalState.trading.positionSize = globalState.lastAdvice.newPositionSize;
+    } else if (globalState.lastAdvice.action === 'reduce') {
+      globalState.trading.positionSize = globalState.lastAdvice.newPositionSize;
+    }
+  } catch (err) {
+    console.error('[TRADING CYCLE ERROR]', err);
   }
 };
 
-app.post('/trade-start', async (_, res) => {
-  if (trading) return res.json({ message: 'Already trading' });
-  trading = true;
-  tradingLoop = setInterval(() => tradingCycle().catch(console.error), 5000);
-  res.json({ message: 'Trading started' });
+// ========== API ENDPOINTS ==========
+
+// Trading Control
+app.post('/trade-start', (_, res) => {
+  if (globalState.trading.active) return res.json({ status: 'already_active' });
+  
+  globalState.trading.active = true;
+  globalState.trading.interval = setInterval(tradingCycle, 5000);
+  res.json({ status: 'activated', interval: '5s' });
 });
 
 app.post('/trade-end', (_, res) => {
-  trading = false;
-  clearInterval(tradingLoop);
-  res.json({ message: 'Trading stopped' });
+  globalState.trading.active = false;
+  clearInterval(globalState.trading.interval);
+  res.json({ status: 'deactivated' });
 });
 
-const handleTrade = (type) => async (_, res) => {
-  try {
-    const contract = await placeTrade(type);
-    res.json({ type: type.toLowerCase(), success: true, contract });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-app.post('/api/trade-buy', handleTrade('CALL'));
-app.post('/api/trade-sell', handleTrade('PUT'));
-
-app.post('/api/close-trades', async (_, res) => {
-  try {
-    let closed = 0;
-    for (const [id] of closedContracts) {
-      closedContracts.delete(id);
-      closed++;
+// Trade Execution
+['/api/trade-buy', '/api/trade-sell'].forEach(endpoint => {
+  app.post(endpoint, async (_, res) => {
+    try {
+      const type = endpoint.includes('buy') ? 'CALL' : 'PUT';
+      res.json(await placeTrade(type));
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
-    res.json({ message: `Manually cleared ${closed} closed trades.` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  });
 });
 
-let derivReady = false;
-const waitUntilReady = async () => {
-  while (!derivReady || !libraReady) {
-    await new Promise(r => setTimeout(r, 500));
-  }
-};
+// Market Data
+app.get('/chart-live', async (_, res) => res.json(await getAccountStatus()));
+app.get('/chart-data', async (_, res) => res.json(await getTicksForTraining(300)));
 
-app.get('/chart-data', async (_, res) => {
-  try {
-    await waitUntilReady();
-    res.json(await getTicksForTraining(300));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
+// Analysis
 app.get('/api/analysis', (_, res) => {
-  res.json(lastAnalysisResult || { message: 'No analysis yet' });
-});
-
-app.get('/api/symbols', async (_, res) => {
-  try {
-    res.json(getAvailableSymbols());
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  if (!globalState.lastAdvice) {
+    return res.status(404).json({ error: 'No trading data available' });
   }
+  
+  res.json({
+    advice: globalState.lastAdvice,
+    prediction: globalState.lastPrediction,
+    metrics: globalState.marketMetrics,
+    position: {
+      current: globalState.trading.positionSize,
+      max: globalState.trading.maxPositionSize
+    },
+    timestamp: new Date().toISOString()
+  });
 });
 
+// System Management
+app.get('/api/symbols', (_, res) => res.json(getAvailableSymbols()));
 app.post('/api/set-symbol', async (req, res) => {
   try {
-    const { symbol } = req.body;
-    if (!symbol) return res.status(400).json({ error: 'Missing symbol' });
-    await reconnectWithNewSymbol(symbol);
-    res.json({ message: 'Symbol changed', symbol });
+    await reconnectWithNewSymbol(req.body.symbol);
+    res.json({ status: 'symbol_updated', symbol: req.body.symbol });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 });
 
-app.get('/api/check-deals', async (_, res) => {
-  try {
-    const contracts = await getAvailableContracts();
-    res.json(contracts);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.post('/api/close-trades', (_, res) => {
+  const count = closedContracts.size;
+  closedContracts.clear();
+  res.json({ closed: count });
 });
 
-app.post('/api/set-deals', async (req, res) => {
-  const { trade } = req.body;
-  if (!trade) return res.status(400).json({ error: 'Missing trade type' });
-  selectedTrade = trade.toUpperCase();
-  res.json({ message: `Trade type set to ${selectedTrade}` });
-});
-
-app.post('/chat', (req, res) => {
-  res.json({ response: `Hello I'm Libra, You said "${req.body.message}"` });
-});
-
-const handleZipUpload = async (zipPath, res, successMessage) => {
+// File Handling
+const handleModelUpload = async (zipPath, res) => {
   try {
     await loadSparseWeightsFromZip(null, zipPath);
-    res.json({ message: successMessage, path: zipPath });
+    await fs.unlink(zipPath);
+    res.json({ status: 'model_loaded' });
   } catch (err) {
+    await fs.unlink(zipPath).catch(() => {});
     res.status(500).json({ error: err.message });
   }
 };
 
 app.post('/action/upload-zip', async (req, res) => {
-  const file = req.files?.model;
-  if (!file) return res.status(400).send('No file');
-  const zipPath = path.join(TMP_DIR, file.name);
-  await file.mv(zipPath);
-  await handleZipUpload(zipPath, res, 'Weights loaded');
+  if (!req.files?.model) return res.status(400).json({ error: 'no_file' });
+  const zipPath = path.join(TMP_DIR, req.files.model.name);
+  await req.files.model.mv(zipPath);
+  await handleModelUpload(zipPath, res);
 });
 
 app.post('/action/upload-link', async (req, res) => {
-  const { url } = req.body;
-  if (!url) return res.status(400).json({ error: 'Missing URL' });
-  const zipPath = path.join(TMP_DIR, 'model_from_link.zip');
+  const zipPath = path.join(TMP_DIR, `model-${Date.now()}.zip`);
   try {
-    const response = await axios({ url, responseType: 'stream' });
+    const response = await axios.get(req.body.url, { responseType: 'stream' });
     await pipeline(response.data, fs.createWriteStream(zipPath));
-    await handleZipUpload(zipPath, res, 'Weights loaded from link');
+    await handleModelUpload(zipPath, res);
   } catch (err) {
-    res.status(500).json({ error: 'Download failed: ' + err.message });
+    res.status(400).json({ error: 'download_failed' });
   }
 });
 
-app.get('/awake', (_, res) => res.send('✅ Awake'));
-setInterval(() => axios.get(`http://localhost:${PORT}/awake`).catch(() => {}), 8.4e5);
+// ========== SERVER MANAGEMENT ==========
+app.get('/awake', (_, res) => res.send('✅ Server active'));
 
-import('./deriv.js').then(() => { derivReady = true; });
+const keepalive = setInterval(
+  () => axios.get(`http://localhost:${PORT}/awake`).catch(() => {}), 
+  8.4e5 // 14 minutes
+);
+
+process.on('exit', () => {
+  clearInterval(keepalive);
+  clearInterval(globalState.trading.interval);
+  fs.rm(TMP_DIR, { recursive: true }).catch(() => {});
+});
 
 app.listen(PORT, () => {
-  console.log(`🟢 http://localhost:${PORT}`);
+  console.log(`🟢 Server running on port ${PORT}`);
+  console.log(`📊 Trading endpoints:
+  /trade-start - POST
+  /trade-end - POST
+  /api/analysis - GET`);
 });
