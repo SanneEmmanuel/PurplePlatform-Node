@@ -81,9 +81,6 @@ app.get('/chart-live', async (_, res) => {
   }
 });
 
-app.get('/status', async (req, res) => {
-  res.json(await getAccountStatus());
-});
 
 const tradingCycle = async () => {
   const prices = await getTicksForTraining(300);
