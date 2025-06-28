@@ -10,7 +10,7 @@ import { getTicksForTraining } from './engine/deriv.js';
 
 const ZIP_PATH = './downloads/LibraModel.zip';
 
-async function train(batchCount = 1, epochs = 50) {
+async function train(batchCount = 1, epochs = 100) {
   const totalTicks = batchCount * 300;
   console.log(`🎯 Fetching ${totalTicks} ticks...`);
   const { ticks } = await getTicksForTraining(totalTicks);
