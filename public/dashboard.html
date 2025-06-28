@@ -1,181 +1,55 @@
-/* Reset & base */
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
-  font-family: 'Roboto', sans-serif;
-  background: linear-gradient(135deg, #0d47a1, #1976d2);
-  color: #fff;
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: 2rem;
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Investor Dashboard</title>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet" />
+  <!-- Material Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+  <!-- External CSS -->
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body>
+  <main class="dashboard" role="main" aria-label="Investor Dashboard">
+    <section class="profile">
+      <div class="profile-pic">
+        <img src="https://i.pravatar.cc/150?img=68" alt="User profile photo" />
+      </div>
+      <div class="profile-info">
+        <h2 id="user-name">Jane Doe</h2>
+        <p id="investor-since">Investor since 2021</p>
+      </div>
+    </section>
 
-/* Container */
-.dashboard {
-  background: #1e88e5;
-  max-width: 420px;
-  width: 100%;
-  border-radius: 20px;
-  box-shadow:
-    0 10px 20px rgba(0, 0, 0, 0.3),
-    0 6px 6px rgba(0, 0, 0, 0.22);
-  overflow: hidden;
-  padding: 2.5rem 2rem 3rem;
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-  animation: fadeInUp 1s ease forwards;
-}
+    <section class="balance">
+      <div class="balance-text">
+        <span class="label">Total Portfolio Value</span>
+        <span class="amount" id="balance-amount">$48,250.75</span>
+      </div>
+      <div class="growth" id="growth-indicator">
+        <span class="material-icons">trending_up</span>
+        +0.00%
+      </div>
+    </section>
+  </main>
 
-/* Profile Section */
-.profile {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-}
-.profile-pic {
-  width: 70px;
-  height: 70px;
-  border-radius: 50%;
-  border: 3px solid #fff;
-  overflow: hidden;
-  flex-shrink: 0;
-  box-shadow: 0 4px 10px rgba(255 255 255 / 0.3);
-  animation: float 3s ease-in-out infinite;
-}
-.profile-pic img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.profile-info {
-  flex-grow: 1;
-}
-.profile-info h2 {
-  margin: 0 0 6px 0;
-  font-weight: 700;
-  font-size: 1.4rem;
-  letter-spacing: 0.03em;
-}
-.profile-info p {
-  margin: 0;
-  font-weight: 400;
-  opacity: 0.85;
-  font-size: 0.9rem;
-}
+  <script>
+    fetch("https://purplebot-node-54xc.onrender.com/chart-live")
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById("user-name").textContent = data.fullName || "Investor";
+        document.getElementById("investor-since").textContent = `Account: ${data.accountNumber || "N/A"}`;
+        document.getElementById("balance-amount").textContent =
+          "$" + (data.accountBalance?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || "0.00");
 
-/* Balance Section */
-.balance {
-  background: rgba(255 255 255 / 0.15);
-  border-radius: 16px;
-  padding: 1.8rem 2rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: inset 0 0 15px rgba(255 255 255 / 0.3);
-  animation: glow 2.5s ease-in-out infinite alternate;
-}
-.balance-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.balance-text .label {
-  font-weight: 400;
-  font-size: 1rem;
-  opacity: 0.85;
-}
-.balance-text .amount {
-  font-weight: 700;
-  font-size: 2.2rem;
-  letter-spacing: 0.02em;
-}
-
-/* Growth Section */
-.growth {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 700;
-  font-size: 1.3rem;
-  color: #4caf50;
-  text-shadow: 0 0 10px #4caf50aa;
-  animation: pulseGreen 2s infinite;
-}
-.growth.down {
-  color: #f44336;
-  text-shadow: 0 0 10px #f44336aa;
-  animation: pulseRed 2s infinite;
-}
-.growth .material-icons {
-  font-size: 1.8rem;
-}
-
-/* Responsive */
-@media (max-width: 480px) {
-  body {
-    padding: 1rem;
-  }
-  .dashboard {
-    max-width: 100%;
-    padding: 2rem 1.5rem 2.5rem;
-  }
-  .balance-text .amount {
-    font-size: 1.8rem;
-  }
-  .profile-pic {
-    width: 60px;
-    height: 60px;
-  }
-  .profile-info h2 {
-    font-size: 1.2rem;
-  }
-}
-
-/* Animations */
-@keyframes fadeInUp {
-  0% {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes glow {
-  0% {
-    box-shadow: inset 0 0 10px rgba(255 255 255 / 0.3);
-  }
-  100% {
-    box-shadow: inset 0 0 20px rgba(255 255 255 / 0.6);
-  }
-}
-@keyframes pulseGreen {
-  0%, 100% {
-    text-shadow: 0 0 10px #4caf50aa;
-  }
-  50% {
-    text-shadow: 0 0 20px #4caf50ff;
-  }
-}
-@keyframes pulseRed {
-  0%, 100% {
-    text-shadow: 0 0 10px #f44336aa;
-  }
-  50% {
-    text-shadow: 0 0 20px #f44336ff;
-  }
-}
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
+        const status = data.tradingStatus === "active";
+        const growth = document.getElementById("growth-indicator");
+        growth.innerHTML = `<span class="material-icons">${status ? "trending_up" : "pause_circle"}</span> ${status ? "Trading" : "Paused"}`;
+        growth.classList.toggle("down", !status);
+      })
+      .catch(err => console.error("Dashboard update failed:", err));
+  </script>
+</body>
+</html>
