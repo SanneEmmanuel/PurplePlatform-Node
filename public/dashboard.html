@@ -62,178 +62,183 @@
     <button onclick="placeTrade('close')">⚪ Close</button>
   </div>
 
-  <script>
-    const acctNameEl = document.getElementById("acct-name");
-    const acctBalanceEl = document.getElementById("acct-balance");
-    const chatPanel = document.getElementById('chat-panel');
-    const chatMessages = document.getElementById('chat-messages');
-    const chatInput = document.getElementById('chat-text');
-    const symbolSelector = document.getElementById("symbol-selector");
-    const symbolName = document.getElementById("symbol-name");
+<script>
+  const acctNameEl = document.getElementById("acct-name");
+  const acctBalanceEl = document.getElementById("acct-balance");
+  const chatPanel = document.getElementById('chat-panel');
+  const chatMessages = document.getElementById('chat-messages');
+  const chatInput = document.getElementById('chat-text');
+  const symbolSelector = document.getElementById("symbol-selector");
+  const symbolName = document.getElementById("symbol-name");
 
-    let currentSymbol = "R_50";
-    let rawTicks = [];
-    let candlesticks = [];
+  let currentSymbol = "R_50";
+  let rawTicks = [];
+  let candlesticks = [];
 
-    const ctx = document.getElementById('priceChart').getContext('2d');
-    const chart = new Chart(ctx, {
-      type: 'candlestick',
-      data: {
-        datasets: [{
-          label: '5-Tick Candlestick',
-          data: [],
-          color: {
-            up: '#0f0',
-            down: '#f00',
-            unchanged: '#999'
-          }
-        }]
+  const ctx = document.getElementById('priceChart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'candlestick',
+    data: {
+      datasets: [{
+        label: '5-Tick Candlestick',
+        data: [],
+        color: {
+          up: '#0f0',
+          down: '#f00',
+          unchanged: '#999'
+        }
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#fff' } }
       },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { labels: { color: '#fff' } }
+      scales: {
+        x: {
+          ticks: { color: '#ccc' },
+          grid: { color: '#222' }
         },
-        scales: {
-          x: {
-            ticks: { color: '#ccc' },
-            grid: { color: '#222' }
-          },
-          y: {
-            ticks: { color: '#ccc' },
-            grid: { color: '#222' }
-          }
+        y: {
+          ticks: { color: '#ccc' },
+          grid: { color: '#222' }
         }
       }
-    });
-
-    async function loadInitialChart() {
-      try {
-        const res = await fetch(`/api/chart-data`);
-        const data = await res.json();
-        rawTicks = data.map(t => t.price);
-        candlesticks = buildCandles(rawTicks);
-        chart.data.datasets[0].data = candlesticks;
-        chart.update();
-        document.getElementById('last-updated').innerText = `Updated: ${new Date().toLocaleTimeString()}`;
-      } catch (err) {
-        console.error("Initial Chart Load Error:", err);
-      }
     }
+  });
 
-    function buildCandles(ticks) {
-      const candles = [];
-      for (let i = 0; i < ticks.length; i += 5) {
-        const slice = ticks.slice(i, i + 5);
-        if (slice.length < 5) break;
-        const [open, , , , close] = slice;
-        const high = Math.max(...slice);
-        const low = Math.min(...slice);
-        candles.push({
-          x: new Date(Date.now() + i * 1000),
-          o: open,
-          h: high,
-          l: low,
-          c: close
-        });
-      }
-      return candles;
+  async function loadInitialChart() {
+    try {
+      const res = await fetch(`/api/chart-data`);
+      const data = await res.json();
+      rawTicks = data;  // ✅ use raw array directly
+      candlesticks = buildCandles(rawTicks);
+      chart.data.datasets[0].data = candlesticks;
+      chart.update();
+      document.getElementById('last-updated').innerText = `Updated: ${new Date().toLocaleTimeString()}`;
+    } catch (err) {
+      console.error("Initial Chart Load Error:", err);
     }
+  }
 
-    function updateCandlesWithTick(price) {
-      rawTicks.push(price);
-      if (rawTicks.length >= 5 && rawTicks.length % 5 === 0) {
-        const newCandle = buildCandles(rawTicks.slice(-5))[0];
-        candlesticks.push(newCandle);
-        chart.data.datasets[0].data = candlesticks;
-        chart.update();
-        document.getElementById('last-updated').innerText = `Updated: ${new Date().toLocaleTimeString()}`;
-      }
-    }
-
-    // WebSocket for Account Info + Ticks
-    const ws = new WebSocket("ws://localhost:3001");
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.fullName) acctNameEl.innerText = data.fullName;
-        if (data.accountBalance !== undefined) {
-          acctBalanceEl.innerText = `$${parseFloat(data.accountBalance).toFixed(2)}`;
-        }
-        if (data.currentPrice) {
-          updateCandlesWithTick(data.currentPrice);
-        }
-      } catch (e) {
-        console.warn("WS Error:", e);
-      }
-    };
-
-    // Upload ZIP
-    document.getElementById('model-upload').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file || file.type !== 'application/zip') return alert("Select a .zip file");
-
-      const formData = new FormData();
-      formData.append("model", file);
-
-      try {
-        const res = await fetch('/action/upload-zip', {
-          method: 'POST',
-          body: formData
-        });
-        const msg = await res.json();
-        alert(`✅ ${msg.message}`);
-      } catch {
-        alert("❌ Upload failed.");
-      }
-    });
-
-    // Chat
-    function openChat() {
-      chatPanel.style.display = 'flex';
-    }
-
-    async function sendChat() {
-      const text = chatInput.value.trim();
-      if (!text) return;
-      chatMessages.innerHTML += `<div><b>You:</b> ${text}</div>`;
-      chatInput.value = '';
-      const res = await fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text })
+  function buildCandles(ticks) {
+    const candles = [];
+    for (let i = 0; i < ticks.length; i += 5) {
+      const slice = ticks.slice(i, i + 5);
+      if (slice.length < 5) break;
+      const [open, , , , close] = slice;
+      const high = Math.max(...slice);
+      const low = Math.min(...slice);
+      candles.push({
+        x: new Date(Date.now() + i * 1000),
+        o: open,
+        h: high,
+        l: low,
+        c: close
       });
-      const { response } = await res.json();
-      chatMessages.innerHTML += `<div><b>Libra:</b> ${response}</div>`;
-      chatMessages.scrollTop = chatMessages.scrollHeight;
     }
+    return candles;
+  }
 
-    // Trade Buttons
-    async function placeTrade(type) {
-      let url = '';
-      if (type === 'buy') url = '/api/trade-buy';
-      else if (type === 'sell') url = '/api/trade-sell';
-      else url = '/api/close-trades';
+  function updateCandlesWithTick(price) {
+    rawTicks.push(price);
+    if (rawTicks.length >= 5 && rawTicks.length % 5 === 0) {
+      const newCandle = buildCandles(rawTicks.slice(-5))[0];
+      candlesticks.push(newCandle);
+      chart.data.datasets[0].data = candlesticks;
+      chart.update();
+      document.getElementById('last-updated').innerText = `Updated: ${new Date().toLocaleTimeString()}`;
+    }
+  }
 
-      try {
-        const res = await fetch(url, { method: 'POST' });
-        const result = await res.json();
-        alert(`✅ Trade: ${result.type || result.message}`);
-      } catch {
-        alert("❌ Trade error.");
+  // ✅ Polling instead of WebSocket
+  async function pollChartLive() {
+    try {
+      const res = await fetch('/chart-live');
+      const data = await res.json();
+      if (data.fullName) acctNameEl.innerText = data.fullName;
+      if (data.accountBalance !== undefined) {
+        acctBalanceEl.innerText = `$${parseFloat(data.accountBalance).toFixed(2)}`;
       }
+      if (data.currentPrice) {
+        updateCandlesWithTick(data.currentPrice);
+      }
+    } catch (err) {
+      console.warn("Chart Live Poll Error:", err.message);
     }
+  }
 
-    // Symbol Change
-    symbolSelector.addEventListener('change', (e) => {
-      currentSymbol = e.target.value;
-      symbolName.textContent = currentSymbol;
-      rawTicks = [];
-      candlesticks = [];
-      loadInitialChart();
+  setInterval(pollChartLive, 3000); // Poll every 3 seconds
+  pollChartLive(); // Initial call
+
+  // Upload ZIP
+  document.getElementById('model-upload').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file || file.type !== 'application/zip') return alert("Select a .zip file");
+
+    const formData = new FormData();
+    formData.append("model", file);
+
+    try {
+      const res = await fetch('/action/upload-zip', {
+        method: 'POST',
+        body: formData
+      });
+      const msg = await res.json();
+      alert(`✅ ${msg.message}`);
+    } catch {
+      alert("❌ Upload failed.");
+    }
+  });
+
+  // Chat
+  function openChat() {
+    chatPanel.style.display = 'flex';
+  }
+
+  async function sendChat() {
+    const text = chatInput.value.trim();
+    if (!text) return;
+    chatMessages.innerHTML += `<div><b>You:</b> ${text}</div>`;
+    chatInput.value = '';
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text })
     });
+    const { response } = await res.json();
+    chatMessages.innerHTML += `<div><b>Libra:</b> ${response}</div>`;
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
 
+  // Trade Buttons
+  async function placeTrade(type) {
+    let url = '';
+    if (type === 'buy') url = '/api/trade-buy';
+    else if (type === 'sell') url = '/api/trade-sell';
+    else url = '/api/close-trades';
+
+    try {
+      const res = await fetch(url, { method: 'POST' });
+      const result = await res.json();
+      alert(`✅ Trade: ${result.type || result.message}`);
+    } catch {
+      alert("❌ Trade error.");
+    }
+  }
+
+  // Symbol Change
+  symbolSelector.addEventListener('change', (e) => {
+    currentSymbol = e.target.value;
+    symbolName.textContent = currentSymbol;
+    rawTicks = [];
+    candlesticks = [];
     loadInitialChart();
-  </script>
+  });
+
+  loadInitialChart();
+</script>
+      
+
 </body>
 </html>
