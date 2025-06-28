@@ -1,257 +1,181 @@
-no<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>PurpleBot Dashboard</title>
-  <link rel="stylesheet" href="/dashboard.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script
+/* Reset & base */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: 'Roboto', sans-serif;
+  background: linear-gradient(135deg, #0d47a1, #1976d2);
+  color: #fff;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 2rem;
+}
 
-</head>
-<body>
-  <div id="dashboard">
-    <!-- Sidebar -->
-    <div class="sidebar">
-      <h2>📊 PurpleBot</h2>
-      <div class="portfolio">
-        <h3>👤 Account</h3>
-        <p id="acct-name">Loading...</p>
-        <h3>💰 Balance</h3>
-        <div class="balance-value" id="acct-balance">$0.00</div>
-      </div>
+/* Container */
+.dashboard {
+  background: #1e88e5;
+  max-width: 420px;
+  width: 100%;
+  border-radius: 20px;
+  box-shadow:
+    0 10px 20px rgba(0, 0, 0, 0.3),
+    0 6px 6px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  padding: 2.5rem 2rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  animation: fadeInUp 1s ease forwards;
+}
 
-      <label for="model-upload" class="label-upload">📦 Upload Model ZIP</label>
-      <input type="file" id="model-upload" class="upload-input" accept=".zip" />
+/* Profile Section */
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+.profile-pic {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(255 255 255 / 0.3);
+  animation: float 3s ease-in-out infinite;
+}
+.profile-pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-info {
+  flex-grow: 1;
+}
+.profile-info h2 {
+  margin: 0 0 6px 0;
+  font-weight: 700;
+  font-size: 1.4rem;
+  letter-spacing: 0.03em;
+}
+.profile-info p {
+  margin: 0;
+  font-weight: 400;
+  opacity: 0.85;
+  font-size: 0.9rem;
+}
 
-      <label for="symbol-selector" class="label-upload">🔄 Select Symbol</label>
-      <select id="symbol-selector" class="upload-btn">
-        <option value="R_50">stpRNG</option>
-        <option value="R_100">R_100</option>
-        <option value="Volatility_25">Step Index</option>
-        <option value="Volatility_75">Volatility 75</option>
-      </select>
+/* Balance Section */
+.balance {
+  background: rgba(255 255 255 / 0.15);
+  border-radius: 16px;
+  padding: 1.8rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: inset 0 0 15px rgba(255 255 255 / 0.3);
+  animation: glow 2.5s ease-in-out infinite alternate;
+}
+.balance-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.balance-text .label {
+  font-weight: 400;
+  font-size: 1rem;
+  opacity: 0.85;
+}
+.balance-text .amount {
+  font-weight: 700;
+  font-size: 2.2rem;
+  letter-spacing: 0.02em;
+}
 
-      <button onclick="openChat()">💬 Chat with Libra</button>
-    </div>
+/* Growth Section */
+.growth {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.3rem;
+  color: #4caf50;
+  text-shadow: 0 0 10px #4caf50aa;
+  animation: pulseGreen 2s infinite;
+}
+.growth.down {
+  color: #f44336;
+  text-shadow: 0 0 10px #f44336aa;
+  animation: pulseRed 2s infinite;
+}
+.growth .material-icons {
+  font-size: 1.8rem;
+}
 
-    <!-- Main Panel -->
-    <div class="main-panel">
-      <div class="header">
-        <h2>📈 Candlestick Chart - <span id="symbol-name">R_50</span></h2>
-        <small id="last-updated">Updated: --</small>
-      </div>
-      <div class="chart-container">
-        <canvas id="priceChart"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <!-- Chat Panel -->
-  <div id="chat-panel">
-    <header>Libra 💬</header>
-    <div id="chat-messages"></div>
-    <div id="chat-input">
-      <input type="text" id="chat-text" placeholder="Ask Libra..." />
-      <button onclick="sendChat()">➤</button>
-    </div>
-  </div>
-
-  <!-- Floating Trade Buttons -->
-  <div id="trade-buttons" style="position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:999;">
-    <button onclick="placeTrade('buy')">🟢 Buy</button>
-    <button onclick="placeTrade('sell')">🔴 Sell</button>
-    <button onclick="placeTrade('close')">⚪ Close</button>
-  </div>
-
-  <!-- Loading Spinner -->
-  <div id="loader" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.5em; z-index: 9999;">
-    🔄 Loading chart and data...
-  </div>
-
-            
-            
-<script>
-  const acctNameEl = document.getElementById("acct-name");
-  const acctBalanceEl = document.getElementById("acct-balance");
-  const chatPanel = document.getElementById("chat-panel");
-  const chatMessages = document.getElementById("chat-messages");
-  const chatInput = document.getElementById("chat-text");
-  const symbolSelector = document.getElementById("symbol-selector");
-  const symbolName = document.getElementById("symbol-name");
-  const spinner = document.getElementById("loading-spinner");
-
-  let currentSymbol = "R_50";
-  let rawTicks = [];
-  let candlesticks = [];
-
-  const ctx = document.getElementById("priceChart").getContext("2d");
-  const chart = new Chart(ctx, {
-    type: "candlestick",
-    data: {
-      datasets: [{
-        label: "5-Tick Candlestick",
-        data: [],
-        color: {
-          up: "#0f0",
-          down: "#f00",
-          unchanged: "#999"
-        }
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { labels: { color: "#fff" } }
-      },
-      scales: {
-        x: {
-          ticks: { color: "#ccc" },
-          grid: { color: "#222" },
-          adapters: {
-            date: {}
-          }
-        },
-        y: {
-          ticks: { color: "#ccc" },
-          grid: { color: "#222" }
-        }
-      }
-    }
-  });
-
-  async function loadInitialChart() {
-    try {
-      const res = await fetch(`/api/chart-data`);
-      const data = await res.json();
-      rawTicks = data;
-      candlesticks = buildCandles(rawTicks);
-
-      if (!candlesticks || candlesticks.length === 0) {
-        console.warn("🚫 No candlestick data to display");
-      } else {
-        chart.data.datasets[0].data = candlesticks;
-        chart.update();
-        document.getElementById("last-updated").innerText = `Updated: ${new Date().toLocaleTimeString()}`;
-      }
-
-    } catch (err) {
-      console.error("Initial Chart Load Error:", err);
-    } finally {
-      spinner.style.display = 'none';
-    }
+/* Responsive */
+@media (max-width: 480px) {
+  body {
+    padding: 1rem;
   }
-
-  function buildCandles(ticks) {
-    const candles = [];
-    for (let i = 0; i < ticks.length; i += 5) {
-      const slice = ticks.slice(i, i + 5);
-      if (slice.length < 5) break;
-      const [open, , , , close] = slice;
-      const high = Math.max(...slice);
-      const low = Math.min(...slice);
-      candles.push({
-        x: new Date(Date.now() + i * 1000),
-        o: open,
-        h: high,
-        l: low,
-        c: close
-      });
-    }
-    return candles;
+  .dashboard {
+    max-width: 100%;
+    padding: 2rem 1.5rem 2.5rem;
   }
-
-  function updateCandlesWithTick(price) {
-    rawTicks.push(price);
-    if (rawTicks.length >= 5 && rawTicks.length % 5 === 0) {
-      const newCandle = buildCandles(rawTicks.slice(-5))[0];
-      candlesticks.push(newCandle);
-      chart.data.datasets[0].data = candlesticks;
-      chart.update();
-      document.getElementById("last-updated").innerText = `Updated: ${new Date().toLocaleTimeString()}`;
-    }
+  .balance-text .amount {
+    font-size: 1.8rem;
   }
-
-  async function pollChartLive() {
-    try {
-      const res = await fetch("/chart-live");
-      const data = await res.json();
-      if (data.fullName) acctNameEl.innerText = data.fullName;
-      if (data.accountBalance !== undefined) {
-        acctBalanceEl.innerText = `$${parseFloat(data.accountBalance).toFixed(2)}`;
-      }
-      if (data.currentPrice) updateCandlesWithTick(data.currentPrice);
-    } catch (err) {
-      console.warn("Chart Live Poll Error:", err.message);
-    }
+  .profile-pic {
+    width: 60px;
+    height: 60px;
   }
-
-  setInterval(pollChartLive, 3000);
-  pollChartLive();
-
-  document.getElementById("model-upload").addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file || file.type !== "application/zip") return alert("Select a .zip file");
-    const formData = new FormData();
-    formData.append("model", file);
-    try {
-      const res = await fetch("/action/upload-zip", {
-        method: "POST",
-        body: formData
-      });
-      const msg = await res.json();
-      alert(`✅ ${msg.message}`);
-    } catch {
-      alert("❌ Upload failed.");
-    }
-  });
-
-  function openChat() {
-    chatPanel.style.display = "flex";
+  .profile-info h2 {
+    font-size: 1.2rem;
   }
+}
 
-  async function sendChat() {
-    const text = chatInput.value.trim();
-    if (!text) return;
-    chatMessages.innerHTML += `<div><b>You:</b> ${text}</div>`;
-    chatInput.value = '';
-    const res = await fetch("/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text })
-    });
-    const { response } = await res.json();
-    chatMessages.innerHTML += `<div><b>Libra:</b> ${response}</div>`;
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+/* Animations */
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
   }
-
-  async function placeTrade(type) {
-    let url = '';
-    if (type === 'buy') url = '/api/trade-buy';
-    else if (type === 'sell') url = '/api/trade-sell';
-    else url = '/api/close-trades';
-
-    try {
-      const res = await fetch(url, { method: 'POST' });
-      const result = await res.json();
-      alert(`✅ Trade: ${result.type || result.message}`);
-    } catch {
-      alert("❌ Trade error.");
-    }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
   }
-
-  symbolSelector.addEventListener("change", (e) => {
-    currentSymbol = e.target.value;
-    symbolName.textContent = currentSymbol;
-    rawTicks = [];
-    candlesticks = [];
-    spinner.style.display = 'block';
-    loadInitialChart();
-  });
-
-  loadInitialChart();
-</script>
-
-  
-</body>
-</html>
+}
+@keyframes glow {
+  0% {
+    box-shadow: inset 0 0 10px rgba(255 255 255 / 0.3);
+  }
+  100% {
+    box-shadow: inset 0 0 20px rgba(255 255 255 / 0.6);
+  }
+}
+@keyframes pulseGreen {
+  0%, 100% {
+    text-shadow: 0 0 10px #4caf50aa;
+  }
+  50% {
+    text-shadow: 0 0 20px #4caf50ff;
+  }
+}
+@keyframes pulseRed {
+  0%, 100% {
+    text-shadow: 0 0 10px #f44336aa;
+  }
+  50% {
+    text-shadow: 0 0 20px #f44336ff;
+  }
+}
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
