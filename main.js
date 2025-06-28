@@ -95,7 +95,6 @@ const placeTrade = async (tradeType) => {
 
 // ========== TRADING LOGIC ==========
 const tradingCycle = async () => {
-const tradingCycle = async () => {
   try {
     if (!isModelReady()) {
       console.warn('[TRADING] Model not ready, skipping cycle');
