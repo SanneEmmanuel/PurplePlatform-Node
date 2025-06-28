@@ -9,11 +9,14 @@ import { v2 as cloudinary } from 'cloudinary';
 import archiver from 'archiver';
 
 // Validate Cloudinary config
-const cloudConfig = cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+import { v2 as cloudinary } from 'cloudinary';
+// ⚠️ WARNING: Fake Demo Api Keys Fix in Original Keys before running
+cloudinary.config({
+  cloud_name: 'dj4bwntzb',
+  api_key: '833567928347621',
+  api_secret: 'fi9veUSUTqztvz1VkCGSmPcwxRo'
 });
+
 if (!cloudConfig.cloud_name || !cloudConfig.api_key) {
   throw new Error('❌ Invalid Cloudinary configuration');
 }
