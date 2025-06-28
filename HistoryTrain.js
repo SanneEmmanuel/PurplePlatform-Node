@@ -1,43 +1,48 @@
-// trainLibraModel.js
-// Optimized training for Libra3.js
-// Author: Dr. Sanne Karibo
-
+// HistoryTrain.js - Cleaned by Dr. Sanne Karibo
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import archiver from 'archiver';
 import dotenv from 'dotenv';
-
 dotenv.config();
 
-import { trainWithTicks, downloadCurrentModel } from './engine/Libra3.js';
+import { trainWithTicks } from './engine/Libra3.js';
 import { getTicksForTraining } from './engine/deriv.js';
 
-const ZIP_PATH = './downloads/LibraModel.zip';
-const TMP_ZIP = '/tmp/model.zip';
+const ZIP_SRC = '/tmp/model/hunter';
+const ZIP_DEST = './downloads/LibraModel.zip';
 
-async function trainAndExport(batchMultiplier = 1) {
-  const tickCount = batchMultiplier * 300;
-  console.log(`🧮 Requested Ticks: ${tickCount}`);
+async function zipModel() {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(ZIP_DEST);
+    const archive = archiver('zip', { zlib: { level: 9 } });
 
-  const { ticks } = await getTicksForTraining(tickCount);
-  if (!ticks || ticks.length < 300) {
-    throw new Error('❌ Insufficient tick data for training');
-  }
+    output.on('close', () => {
+      console.log(`✅ Zipped: ${archive.pointer()} bytes at ${ZIP_DEST}`);
+      resolve();
+    });
 
-  await trainWithTicks(ticks, 50); // 50 epochs default
-
-  console.log('📦 Preparing ZIP for download...');
-  await downloadCurrentModel(TMP_ZIP);
-
-  fs.mkdirSync('./downloads', { recursive: true });
-  fs.copyFileSync(TMP_ZIP, ZIP_PATH);
-
-  console.log(`✅ Download ready at: ${ZIP_PATH}`);
-  process.exit(0);
+    archive.on('error', reject);
+    archive.pipe(output);
+    archive.directory(ZIP_SRC, false);
+    archive.finalize();
+  });
 }
 
-const arg = parseInt(process.argv[2]) || 1;
-trainAndExport(arg).catch(err => {
-  console.error('[❌] Training failed:', err);
+async function train(batchCount = 1, epochs = 50) {
+  const totalTicks = batchCount * 300;
+  console.log(`🎯 Fetching ${totalTicks} ticks...`);
+  const { ticks } = await getTicksForTraining(totalTicks);
+  if (!ticks?.length || ticks.length < 300) throw new Error('❌ Not enough ticks');
+  
+  await trainWithTicks(ticks, epochs);
+  fs.mkdirSync('./downloads', { recursive: true });
+  await zipModel();
+  console.log('🏁 Training complete. Model ready for download.');
+}
+
+const batches = parseInt(process.argv[2]) || 1;
+const epochs = parseInt(process.argv[3]) || 50;
+train(batches, epochs).catch(err => {
+  console.error('💥 Training failed:', err);
   process.exit(1);
 });
