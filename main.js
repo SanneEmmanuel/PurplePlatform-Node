@@ -8,11 +8,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { WebSocketServer } from 'ws';
 import { pipeline } from 'stream/promises';
 
 import {
-  requestContractProposal, // ✅ updated
+  requestContractProposal,
   buyContract,
   getCurrentPrice,
   getLast100Ticks,
@@ -36,7 +35,6 @@ import {
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
-const WSPORT = 3001;
 const TMP_DIR = '/tmp';
 let trading = false, tradingLoop = null;
 let selectedTrade = 'CALL';
@@ -62,11 +60,10 @@ const getAccountStatus = async () => {
   };
 };
 
-// ✅ Corrected placeTrade using new contract proposal
 const placeTrade = async (tradeType) => {
   try {
-    const proposal = await requestContractProposal(tradeType, 1, 1); // 1 stake, 1 duration
-    const contract = await buyContract(proposal.id, 1); // buy 1 unit
+    const proposal = await requestContractProposal(tradeType, 1, 1);
+    const contract = await buyContract(proposal.id, 1);
     console.log(`[TRADE] ${tradeType} contract bought:`, contract?.buy);
     return contract;
   } catch (err) {
@@ -75,17 +72,13 @@ const placeTrade = async (tradeType) => {
   }
 };
 
-const wss = new WebSocketServer({ port: WSPORT });
-wss.on('connection', ws => {
-  console.log('[WS] Connected');
-  const loop = setInterval(async () => {
-    try {
-      ws.send(JSON.stringify(await getAccountStatus()));
-    } catch (e) {
-      console.error('[WS Error]', e);
-    }
-  }, 3000);
-  ws.on('close', () => clearInterval(loop));
+app.get('/chart-live', async (_, res) => {
+  try {
+    const status = await getAccountStatus();
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/status', async (req, res) => {
@@ -234,5 +227,4 @@ import('./deriv.js').then(() => { derivReady = true; });
 
 app.listen(PORT, () => {
   console.log(`🟢 http://localhost:${PORT}`);
-  console.log(`🌐 ws://localhost:${WSPORT}`);
 });
