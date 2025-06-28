@@ -16,9 +16,10 @@ cloudinary.config({
   api_secret: 'fi9veUSUTqztvz1VkCGSmPcwxRo'
 });
 
-if (!cloudConfig.cloud_name || !cloudConfig.api_key) {
+if (!cloudinary.config().cloud_name || !cloudinary.config().api_key) {
   throw new Error('❌ Invalid Cloudinary configuration');
 }
+
 
 let model;
 let modelReady = false;
