@@ -26,7 +26,7 @@ const {
   getAccountBalance, getAccountInfo, reconnectWithNewSymbol, getAvailableSymbols,
   closedContracts, getAvailableContracts 
 } = deriv;
-const { runPrediction, tradeAdvice, loadSparseWeightsFromZip, isModelReady } = engine;
+const { runPrediction, tradeAdvice, loadSparseWeightsFromZip, isModelReady, adaptOnFailure} = engine;
 
 // ========== APP CONFIGURATION ==========
 const app = express();
@@ -95,14 +95,16 @@ const placeTrade = async (tradeType) => {
 
 // ========== TRADING LOGIC ==========
 const tradingCycle = async () => {
+const tradingCycle = async () => {
   try {
     if (!isModelReady()) {
       console.warn('[TRADING] Model not ready, skipping cycle');
       return;
     }
-    const prices = await getTicksForTraining(300);
+
+    const prices = await getTicksForTraining(300); // Get full 300 ticks
     const prediction = await runPrediction(prices);
-    
+
     if (!prediction?.predicted || !prediction?.actuals) {
       console.warn('[TRADING] Incomplete prediction data');
       return;
@@ -121,18 +123,28 @@ const tradingCycle = async () => {
 
     console.log('[TRADING] New advice:', globalState.lastAdvice);
 
-    // Execute trading logic
-    if (globalState.lastAdvice.action === 'add') {
-      await placeTrade(globalState.lastAdvice.direction);
-      globalState.trading.selectedTrade = globalState.lastAdvice.direction;
-      globalState.trading.positionSize = globalState.lastAdvice.newPositionSize;
-    } else if (globalState.lastAdvice.action === 'reduce') {
-      globalState.trading.positionSize = globalState.lastAdvice.newPositionSize;
+    // Trade execution and adaptive learning
+    const { action, direction, newPositionSize, outcome } = globalState.lastAdvice;
+
+    if (action === 'add') {
+      await placeTrade(direction);
+      globalState.trading.selectedTrade = direction;
+      globalState.trading.positionSize = newPositionSize;
+    } else if (action === 'reduce') {
+      globalState.trading.positionSize = newPositionSize;
     }
+
+    // If we lost, retrain immediately
+    if (outcome === 'LOSS') {
+      console.log("Libra is Learning From Loss");
+      await adaptOnFailure(prices, prediction.actuals);
+    }
+
   } catch (err) {
     console.error('[TRADING CYCLE ERROR]', err);
   }
 };
+
 
 // ========== API ENDPOINTS ==========
 
