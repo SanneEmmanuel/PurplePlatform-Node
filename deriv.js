@@ -1,4 +1,4 @@
-// deriv.js - Modular Deriv WebSocket API Client
+// deriv.js - Stable Deriv WebSocket API Client
 import WebSocket from 'ws';
 import { promises as fs } from 'fs';
 import dotenv from 'dotenv';
@@ -15,42 +15,46 @@ let cfg = {
   API_TOKEN: process.env.DERIV_API_TOKEN || ''
 };
 
+let conn = null, isConnecting = false, isAuthorized = false, retries = 0, msgId = 1;
 let candles = [], openContracts = new Map(), closedContracts = new Map();
-let accountBalance = null, accountInfo = {}, isAuthorized = false;
-let availableSymbols = [], symbolDetails = [], contractSpecs = {};
-let onInvalidSymbol, conn = null, isConnecting = false, retries = 0, msgId = 1;
-const callbacks = new Map();
+let accountBalance = null, accountInfo = {}, availableSymbols = [], symbolDetails = [];
+let contractSpecs = {}, callbacks = new Map(), onInvalidSymbol = null;
 
-// Helpers
+// Utils
 const save = (f, d) => fs.writeFile(`${TMP}/${f}`, JSON.stringify(d, null, 2));
 const load = async f => {
   try { return JSON.parse(await fs.readFile(`${TMP}/${f}`)); } catch { return null; }
 };
 const waitReady = (t = 10000) => new Promise((res, rej) => {
-  const s = Date.now(); const check = () =>
-    conn?.readyState === 1 ? res() : Date.now() - s > t ? rej('Socket timeout') : setTimeout(check, 100);
+  const start = Date.now(); const check = () =>
+    conn?.readyState === 1 ? res() : Date.now() - start > t ? rej('Socket timeout') : setTimeout(check, 100);
   check();
 });
 async function send(payload, cb) {
   payload.req_id = msgId++;
   if (cb) callbacks.set(payload.req_id, cb);
   try { await waitReady(); conn.send(JSON.stringify(payload)); }
-  catch (e) { console.error('[❌] Send error:', e); }
+  catch (e) { console.error('[❌] Send failed:', e.message); }
 }
 
-const setRuntimeConfig = (k, v) => (cfg[k] = v);
-const getSymbol = () => cfg.SYMBOL;
-const getToken = () => cfg.API_TOKEN;
+function setRuntimeConfig(k, v) { cfg[k] = v; }
+function getSymbol() { return cfg.SYMBOL; }
+function getToken() { return cfg.API_TOKEN; }
 
 function createConnection() {
   conn = new WebSocket(WS_URL);
+  conn.on('open', () => console.log('[🌐] Connected to Deriv'));
   conn.on('message', msg => handleMessage(JSON.parse(msg)));
   conn.on('error', e => console.error('[❌] WebSocket error:', e.message));
-  conn.on('close', () => { isAuthorized = false; connect(); });
+  conn.on('close', () => {
+    console.warn('[⚠️] Socket closed');
+    isAuthorized = false;
+    reconnect(); // auto reconnect
+  });
 }
 
 async function connect() {
-  if (isConnecting) return;
+  if (isConnecting || conn?.readyState === 1) return;
   isConnecting = true;
   try {
     console.log('[🌐] Connecting...');
@@ -69,16 +73,24 @@ async function connect() {
 
     const cached = await load('candles.json');
     if (cached?.length) candles = cached;
-    else await fetchCandles(), await save('candles.json', candles);
+    else await fetchCandles();
 
     streamBalance();
     retries = 0;
   } catch (err) {
-    console.error('[❌] Connect failed:', err);
+    console.error('[❌] Connection failed:', err);
     if (++retries <= 5) setTimeout(connect, 3000);
   } finally {
     isConnecting = false;
   }
+}
+
+function reconnect() {
+  if (conn) {
+    conn.removeAllListeners();
+    conn.terminate();
+  }
+  connect();
 }
 
 function handleMessage(data) {
@@ -86,26 +98,27 @@ function handleMessage(data) {
     callbacks.get(data.req_id)(data);
     callbacks.delete(data.req_id);
   }
-  const m = data.msg_type;
-  if (m === 'authorize') {
-    if (data.error || !data.authorize) return isAuthorized = false;
+
+  const t = data.msg_type;
+  if (t === 'authorize') {
+    if (data.error) return console.error('[❌] Auth error:', data.error.message);
     accountInfo = data.authorize;
     isAuthorized = true;
     console.log('[✅] Authorized as', accountInfo.loginid);
   }
-  if (m === 'balance') accountBalance = data.balance.balance;
-  if (m === 'candles') candles = data.candles, save('candles.json', candles);
-  if (m === 'ohlc') {
+  if (t === 'balance') accountBalance = data.balance.balance;
+  if (t === 'candles') candles = data.candles, save('candles.json', candles);
+  if (t === 'ohlc') {
     candles.push(data.ohlc);
     if (candles.length > COUNT) candles.shift();
     save('candles.json', candles);
   }
-  if (m === 'active_symbols') {
+  if (t === 'active_symbols') {
     symbolDetails = data.active_symbols;
     availableSymbols = symbolDetails.map(s => s.symbol);
   }
-  if (m === 'buy') trackContract(data.buy.contract_id);
-  if (m === 'open_contract') {
+  if (t === 'buy') trackContract(data.buy.contract_id);
+  if (t === 'open_contract') {
     const c = data.open_contract;
     (c.is_sold ? closedContracts : openContracts).set(c.contract_id, c);
     if (c.is_sold) openContracts.delete(c.contract_id);
@@ -114,7 +127,7 @@ function handleMessage(data) {
 
 const authorize = () => new Promise((res, rej) => {
   const token = getToken();
-  if (!token) return rej('No token');
+  if (!token) return rej('No API token provided');
   send({ authorize: token }, data => {
     if (data.error) return rej(data.error.message);
     isAuthorized = true;
@@ -122,7 +135,7 @@ const authorize = () => new Promise((res, rej) => {
   });
 });
 
-const ensureAuth = () => { if (!isAuthorized) throw 'Not authorized'; };
+const ensureAuth = () => { if (!isAuthorized) throw 'Unauthorized'; };
 
 function loadSymbols() {
   return new Promise(resolve => {
@@ -141,6 +154,7 @@ function fetchCandles() {
     send({ ticks_history: getSymbol(), style: 'candles', granularity: GRAN, start, end }, d => {
       if (d.error) return rej(d.error.message);
       candles = d.candles;
+      save('candles.json', candles);
       res();
     });
   });
@@ -189,11 +203,6 @@ async function getAvailableContracts(symbol = getSymbol()) {
   });
 }
 
-const requestCALLProposal = (...args) => requestContractProposal('CALL', ...args);
-const requestPUTProposal = (...args) => requestContractProposal('PUT', ...args);
-const requestHIGHERProposal = (...args) => requestContractProposal('HIGHER', ...args);
-const requestLOWERProposal = (...args) => requestContractProposal('LOWER', ...args);
-
 const buyContract = (proposal_id, price) => {
   ensureAuth();
   send({ buy: 1, price, proposal_id });
@@ -202,19 +211,17 @@ const buyContract = (proposal_id, price) => {
 const trackContract = id => send({ open_contract: 1, contract_id: id, subscribe: 1 });
 
 function disconnect() {
-  if (conn?.readyState === 1) conn.close(1000, 'Bye');
+  if (conn?.readyState === 1) conn.close(1000, 'Client disconnect');
 }
 
-async function reconnectWithNewSymbol(sym) {
-  setRuntimeConfig('SYMBOL', sym);
-  disconnect();
-  await connect();
+async function reconnectWithNewSymbol(symbol) {
+  setRuntimeConfig('SYMBOL', symbol);
+  reconnect();
 }
 
 async function reconnectWithNewToken(token) {
   setRuntimeConfig('API_TOKEN', token);
-  disconnect();
-  await connect();
+  reconnect();
 }
 
 const getCurrentPrice = async () => {
@@ -251,10 +258,10 @@ const getTicksForTraining = async count => {
   return all.slice(-count);
 };
 
-process.on('SIGINT', () => { disconnect(); process.exit(); });
+// Startup
 connect();
 
-// ✅ Export API
+// ✅ Exported API
 export {
   requestContractProposal,
   buyContract,
@@ -264,10 +271,6 @@ export {
   reconnectWithNewSymbol,
   reconnectWithNewToken,
   getAvailableContracts,
-  requestCALLProposal,
-  requestPUTProposal,
-  requestHIGHERProposal,
-  requestLOWERProposal,
   disconnect
 };
 
