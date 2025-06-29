@@ -6,12 +6,14 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { trainWithTicks, downloadCurrentModel } from './engine/Libra3.js';
-import { getTicksForTraining } from './deriv.js';
+import { getTicksForTraining, waitReady } from './deriv.js';
 
 const ZIP_PATH = './downloads/LibraModel.zip';
 
 async function train(batchCount = 1, epochs = 100) {
   const totalTicks = batchCount * 300;
+  console.log('Preparing Deriv...');
+await waitReady()
   console.log(`🎯 Fetching ${totalTicks} ticks...`);
   const { ticks } = await getTicksForTraining(totalTicks);
 
