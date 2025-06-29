@@ -25,7 +25,7 @@ const save = (f, d) => fs.writeFile(`${TMP}/${f}`, JSON.stringify(d, null, 2));
 const load = async f => {
   try { return JSON.parse(await fs.readFile(`${TMP}/${f}`)); } catch { return null; }
 };
-const waitReady = (t = 10000) => new Promise((res, rej) => {
+export const waitReady = (t = 10000) => new Promise((res, rej) => {
   const start = Date.now(); const check = () =>
     conn?.readyState === 1 ? res() : Date.now() - start > t ? rej('Socket timeout') : setTimeout(check, 100);
   check();
@@ -273,7 +273,7 @@ export {
   getAvailableContracts,
   disconnect
 };
-
+export const isDerivReady = () => conn?.readyState === 1 && isAuthorized;
 export const getAccountBalance = () => accountBalance;
 export const getAvailableSymbols = () => availableSymbols;
 export const getSymbolDetails = () => symbolDetails;
