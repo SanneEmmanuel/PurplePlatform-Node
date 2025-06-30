@@ -61,61 +61,85 @@ export async function trainWithTicks(ticks, epochs = 50) {
 
   try {
     // Step 1: Extract dataset
-    dataset = extractDataset(ticks);
-    console.log('✅ Dataset extracted');
+    try {
+      dataset = extractDataset(ticks);
+      console.log('✅ Dataset extracted');
+    } catch (err) {
+      console.error('❌ Failed to extract dataset:', err);
+      throw err;
+    }
 
     // Step 2: Build model
-    model = buildModel();
-    console.log('🧠 Model built successfully');
+    try {
+      model = buildModel();
+      console.log('🧠 Model built successfully');
+    } catch (err) {
+      console.error('❌ Failed to build model:', err);
+      throw err;
+    }
 
     // Step 3: Train model
-    console.log('📦 Training model...');
-    await model.fit(dataset.xs, dataset.ys, {
-      epochs,
-      batchSize: 32,
-      shuffle: true,
-      callbacks: {
-        onEpochBegin: epoch => console.log(`🚀 Epoch ${epoch + 1}/${epochs}`),
-        onEpochEnd: (epoch, logs) => {
-          console.log(`📉 Epoch ${epoch + 1} Loss: ${logs.loss?.toFixed(6)}`);
+    try {
+      console.log('📦 Training model...');
+      await model.fit(dataset.xs, dataset.ys, {
+        epochs,
+        batchSize: 32,
+        shuffle: true,
+        callbacks: {
+          onEpochBegin: epoch => console.log(`🚀 Epoch ${epoch + 1}/${epochs}`),
+          onEpochEnd: (epoch, logs) => {
+            console.log(`📉 Epoch ${epoch + 1} Loss: ${logs.loss?.toFixed(6)}`);
+          }
         }
-      }
-    });
-    console.log('✅ Training complete');
+      });
+      console.log('✅ Training complete');
+    } catch (err) {
+      console.error('❌ Training failed:', err);
+      throw err;
+    }
 
     // Step 4: Save model to local disk
-try{
-    console.log('💾 Saving model to disk...');
-    await model.save('file://./model_dir');
-    console.log('✅ Model saved to ./model_dir');
-}catch(errs){console.error('failed to save to disk',errs);}
-    // Step 5: Confirm model.json exists
-   try{
-    const fs = await import('fs/promises');
-    console.log('📁 Checking model_dir contents...');
-    const files = await fs.readdir('./model_dir');
-    console.log('📃 model_dir contains:', files);
-    if (!files.includes('model.json')) {
-      throw new Error('model.json not found after save');
+    try {
+      console.log('💾 Saving model to disk...');
+      await model.save('file://./model_dir');
+      console.log('✅ Model saved to ./model_dir');
+    } catch (err) {
+      console.error('❌ Failed to save model to disk:', err);
     }
-   }catch(errs){console.error("Couldn't Read Directory",errs);}
-    // Step 6: Upload to Cloudinary
-try{
-    console.log('☁️ Uploading model.json to Cloudinary...');
-    const uploadRes = await cloudinary.uploader.upload('./model_dir/model.json', {
-      resource_type: 'raw',
-      public_id: 'libra_model'
-    });
-    console.log('☁️ Model uploaded to Cloudinary:', uploadRes.secure_url);
-}catch(errs){console.error("Failed to upload",errs);}
+
+    // Step 5: Confirm model.json exists
+    try {
+      const fsPromises = await import('fs/promises');
+      console.log('📁 Checking model_dir contents...');
+      const files = await fsPromises.readdir('./model_dir');
+      console.log('📃 model_dir contains:', files);
+      if (!files.includes('model.json')) {
+        throw new Error('model.json not found after save');
+      }
+    } catch (err) {
+      console.error("❌ Couldn't read model_dir or confirm model.json:", err);
+    }
+
+    // Step 6: Upload model.json to Cloudinary
+    try {
+      console.log('☁️ Uploading model.json to Cloudinary...');
+      const uploadRes = await cloudinary.uploader.upload('./model_dir/model.json', {
+        resource_type: 'raw',
+        public_id: 'libra_model'
+      });
+      console.log('☁️ Model uploaded to Cloudinary:', uploadRes.secure_url);
+    } catch (err) {
+      console.error('❌ Failed to upload model to Cloudinary:', err);
+    }
+
     // Step 7: Mark model as ready
     modelReady = true;
     console.log('✅ Model is ready for use');
-    
+
   } catch (err) {
-    console.error('❌ Training process failed:', err);
+    console.error('💥 Training process failed:', err.message);
   } finally {
-    // Always dispose tensors
+    // Step 8: Cleanup tensors
     if (dataset) {
       try {
         tf.dispose([dataset.xs, dataset.ys]);
