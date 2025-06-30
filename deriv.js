@@ -60,7 +60,6 @@ function createConnection() {
 }
 
 async function connect() {
-async function connect() {
   if (isConnecting || conn?.readyState === 1) return;
   isConnecting = true;
   try {
