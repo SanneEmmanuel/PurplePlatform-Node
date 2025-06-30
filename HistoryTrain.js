@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { trainWithTicks, downloadCurrentModel } from './engine/Libra3.js';
-import { getTicksForTraining, waitReady } from './deriv.js';
+import { getTicksForTraining} from './deriv.js';
 
 const ZIP_PATH = './downloads/LibraModel.zip';
 
