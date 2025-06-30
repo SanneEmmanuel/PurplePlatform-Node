@@ -10,11 +10,12 @@ import archiver from 'archiver';
 
 
 // ⚠️ WARNING: Fake Demo Api Keys Fix in Original Keys before running
-cloudinary.config({
-  cloud_name: 'dj4bwntzb',
-  api_key: '833567928347621',
-  api_secret: 'fi9veUSUTqztvz1VkCGSmPcwxRo'
+cloudinary.config({ 
+  cloud_name: 'dj4bwntzb', 
+  api_key: '354656419316393', 
+  api_secret: 'M-Trl9ltKDHyo1dIP2AaLOG-WPM' 
 });
+
 
 if (!cloudinary.config().cloud_name || !cloudinary.config().api_key) {
   throw new Error('❌ Invalid Cloudinary configuration');
