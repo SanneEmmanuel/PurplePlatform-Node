@@ -55,10 +55,19 @@ function extractDataset(ticks) {
 }
 
 export async function trainWithTicks(ticks, epochs = 50) {
-  const dataset = extractDataset(ticks);
-  model = buildModel();
+  console.log('🔍 Starting training with', ticks.length, 'ticks');
+  let dataset;
 
   try {
+    // Step 1: Extract dataset
+    dataset = extractDataset(ticks);
+    console.log('✅ Dataset extracted');
+
+    // Step 2: Build model
+    model = buildModel();
+    console.log('🧠 Model built successfully');
+
+    // Step 3: Train model
     console.log('📦 Training model...');
     await model.fit(dataset.xs, dataset.ys, {
       epochs,
@@ -66,21 +75,54 @@ export async function trainWithTicks(ticks, epochs = 50) {
       shuffle: true,
       callbacks: {
         onEpochBegin: epoch => console.log(`🚀 Epoch ${epoch + 1}/${epochs}`),
-        onEpochEnd: (epoch, logs) => console.log(`📉 Loss: ${logs.loss.toFixed(6)}`)
+        onEpochEnd: (epoch, logs) => {
+          console.log(`📉 Epoch ${epoch + 1} Loss: ${logs.loss?.toFixed(6)}`);
+        }
       }
     });
+    console.log('✅ Training complete');
 
+    // Step 4: Save model to local disk
+    console.log('💾 Saving model to disk...');
     await model.save('file://./model_dir');
+    console.log('✅ Model saved to ./model_dir');
+
+    // Step 5: Confirm model.json exists
+    const fs = await import('fs/promises');
+    console.log('📁 Checking model_dir contents...');
+    const files = await fs.readdir('./model_dir');
+    console.log('📃 model_dir contains:', files);
+    if (!files.includes('model.json')) {
+      throw new Error('model.json not found after save');
+    }
+
+    // Step 6: Upload to Cloudinary
+    console.log('☁️ Uploading model.json to Cloudinary...');
     const uploadRes = await cloudinary.uploader.upload('./model_dir/model.json', {
       resource_type: 'raw',
       public_id: 'libra_model'
     });
-    console.log('☁️ Model uploaded:', uploadRes.secure_url);
+    console.log('☁️ Model uploaded to Cloudinary:', uploadRes.secure_url);
+
+    // Step 7: Mark model as ready
     modelReady = true;
+    console.log('✅ Model is ready for use');
+    
+  } catch (err) {
+    console.error('❌ Training process failed:', err);
   } finally {
-    tf.dispose([dataset.xs, dataset.ys]);
+    // Always dispose tensors
+    if (dataset) {
+      try {
+        tf.dispose([dataset.xs, dataset.ys]);
+        console.log('🧹 Tensors disposed');
+      } catch (disposeErr) {
+        console.warn('⚠️ Tensor disposal failed:', disposeErr);
+      }
+    }
   }
 }
+
 
 export async function loadModelFromCloudinary() {
   const modelUrl = process.env.CLOUDINARY_MODEL_JSON_URL;
