@@ -84,10 +84,11 @@ export async function trainWithTicks(ticks, epochs = 50) {
     console.log('✅ Training complete');
 
     // Step 4: Save model to local disk
+try{
     console.log('💾 Saving model to disk...');
     await model.save('file://./model_dir');
     console.log('✅ Model saved to ./model_dir');
-
+}catch(errs){console.error('failed to save to disk',errs);}
     // Step 5: Confirm model.json exists
     const fs = await import('fs/promises');
     console.log('📁 Checking model_dir contents...');
