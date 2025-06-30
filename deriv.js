@@ -35,6 +35,7 @@ export const waitReady = (t = 10000) => new Promise((res, rej) => {
   check();
 });
 
+
 async function send(payload, cb) {
   payload.req_id = msgId++;
   if (cb) callbacks.set(payload.req_id, cb);
