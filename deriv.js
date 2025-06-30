@@ -25,17 +25,11 @@ const save = (f, d) => fs.writeFile(`${TMP}/${f}`, JSON.stringify(d, null, 2));
 const load = async f => {
   try { return JSON.parse(await fs.readFile(`${TMP}/${f}`)); } catch { return null; }
 };
-export const waitReady = (t = 10000) => new Promise((res, rej) => {
-  const start = Date.now();
-  const check = () => {
-    if (conn?.readyState === 1 && isAuthorized) return res();
-    if (Date.now() - start > t) return rej('Socket authorization timeout');
-    setTimeout(check, 100);
-  };
+const waitReady = (t = 10000) => new Promise((res, rej) => {
+  const start = Date.now(); const check = () =>
+    conn?.readyState === 1 ? res() : Date.now() - start > t ? rej('Socket timeout') : setTimeout(check, 100);
   check();
 });
-
-
 async function send(payload, cb) {
   payload.req_id = msgId++;
   if (cb) callbacks.set(payload.req_id, cb);
@@ -60,35 +54,35 @@ function createConnection() {
 }
 
 async function connect() {
-  if (isConnecting || conn?.readyState === 1) return;
-  isConnecting = true;
-  try {
-    console.log('[🌐] Connecting...');
-    createConnection(); // Start WebSocket connection (this is async internally)
+  if (isConnecting || conn?.readyState === 1) return;
+  isConnecting = true;
+  try {
+    console.log('[🌐] Connecting...');
+    createConnection();
+    await waitReady();
+    console.log('[🔐] Token:', getToken());
+    await authorize();
 
-    console.log('[🔐] Token:', getToken());
-    await authorize(); // 🔒 Only authorize AFTER connecting
+    const loaded = await load('symbols.json');
+    availableSymbols = loaded || (await loadSymbols(), await save('symbols.json', availableSymbols), availableSymbols);
 
-    const loaded = await load('symbols.json');
-    availableSymbols = loaded || (await loadSymbols(), await save('symbols.json', availableSymbols), availableSymbols);
+    if (!availableSymbols.includes(getSymbol())) {
+      setRuntimeConfig('SYMBOL', DEF_SYMBOL);
+      onInvalidSymbol?.(availableSymbols);
+    }
 
-    if (!availableSymbols.includes(getSymbol())) {
-      setRuntimeConfig('SYMBOL', DEF_SYMBOL);
-      onInvalidSymbol?.(availableSymbols);
-    }
+    const cached = await load('candles.json');
+    if (cached?.length) candles = cached;
+    else await fetchCandles();
 
-    const cached = await load('candles.json');
-    if (cached?.length) candles = cached;
-    else await fetchCandles();
-
-    streamBalance();
-    retries = 0;
-  } catch (err) {
-    console.error('[❌] Connection failed:', err);
-    if (++retries <= 5) setTimeout(connect, 3000);
-  } finally {
-    isConnecting = false;
-  }
+    streamBalance();
+    retries = 0;
+  } catch (err) {
+    console.error('[❌] Connection failed:', err);
+    if (++retries <= 5) setTimeout(connect, 3000);
+  } finally {
+    isConnecting = false;
+  }
 }
 
 function reconnect() {
@@ -279,7 +273,7 @@ export {
   getAvailableContracts,
   disconnect
 };
-export const isDerivReady = () => conn?.readyState === 1 && isAuthorized;
+
 export const getAccountBalance = () => accountBalance;
 export const getAvailableSymbols = () => availableSymbols;
 export const getSymbolDetails = () => symbolDetails;
