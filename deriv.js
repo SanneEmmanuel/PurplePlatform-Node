@@ -60,35 +60,36 @@ function createConnection() {
 }
 
 async function connect() {
-  if (isConnecting || conn?.readyState === 1) return;
-  isConnecting = true;
-  try {
-    console.log('[🌐] Connecting...');
-    createConnection();
-    await waitReady();
-    console.log('[🔐] Token:', getToken());
-    await authorize();
+async function connect() {
+  if (isConnecting || conn?.readyState === 1) return;
+  isConnecting = true;
+  try {
+    console.log('[🌐] Connecting...');
+    createConnection(); // Start WebSocket connection (this is async internally)
 
-    const loaded = await load('symbols.json');
-    availableSymbols = loaded || (await loadSymbols(), await save('symbols.json', availableSymbols), availableSymbols);
+    console.log('[🔐] Token:', getToken());
+    await authorize(); // 🔒 Only authorize AFTER connecting
 
-    if (!availableSymbols.includes(getSymbol())) {
-      setRuntimeConfig('SYMBOL', DEF_SYMBOL);
-      onInvalidSymbol?.(availableSymbols);
-    }
+    const loaded = await load('symbols.json');
+    availableSymbols = loaded || (await loadSymbols(), await save('symbols.json', availableSymbols), availableSymbols);
 
-    const cached = await load('candles.json');
-    if (cached?.length) candles = cached;
-    else await fetchCandles();
+    if (!availableSymbols.includes(getSymbol())) {
+      setRuntimeConfig('SYMBOL', DEF_SYMBOL);
+      onInvalidSymbol?.(availableSymbols);
+    }
 
-    streamBalance();
-    retries = 0;
-  } catch (err) {
-    console.error('[❌] Connection failed:', err);
-    if (++retries <= 5) setTimeout(connect, 3000);
-  } finally {
-    isConnecting = false;
-  }
+    const cached = await load('candles.json');
+    if (cached?.length) candles = cached;
+    else await fetchCandles();
+
+    streamBalance();
+    retries = 0;
+  } catch (err) {
+    console.error('[❌] Connection failed:', err);
+    if (++retries <= 5) setTimeout(connect, 3000);
+  } finally {
+    isConnecting = false;
+  }
 }
 
 function reconnect() {
@@ -137,7 +138,7 @@ const authorize = () => new Promise((res, rej) => {
   send({ authorize: token }, data => {
     if (data.error) return rej(data.error.message);
     isAuthorized = true;
-    res(data);
+    res(dat;
   });
 });
 
