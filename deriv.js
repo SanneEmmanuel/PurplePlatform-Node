@@ -138,7 +138,7 @@ const authorize = () => new Promise((res, rej) => {
   send({ authorize: token }, data => {
     if (data.error) return rej(data.error.message);
     isAuthorized = true;
-    res(dat;
+    res(data);
   });
 });
 
