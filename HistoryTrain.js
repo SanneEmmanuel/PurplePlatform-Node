@@ -14,13 +14,6 @@ const ZIP_PATH = './downloads/LibraModel.zip';
 async function train(batchCount = 1, epochs = 100) {
   const totalTicks = batchCount * 300;
   console.log('🛠️  Step 1: Initializing Deriv connection...');
-  try {
-    await waitReady();
-    console.log('✅ Deriv is ready');
-  } catch (err) {
-    console.error('❌ Error in waitReady():', err.message);
-    return;
-  }
 
   console.log(`🎯 Step 2: Fetching ${totalTicks} ticks...`);
   let ticks;
