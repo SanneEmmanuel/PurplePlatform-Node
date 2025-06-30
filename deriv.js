@@ -26,10 +26,15 @@ const load = async f => {
   try { return JSON.parse(await fs.readFile(`${TMP}/${f}`)); } catch { return null; }
 };
 export const waitReady = (t = 10000) => new Promise((res, rej) => {
-  const start = Date.now(); const check = () =>
-    conn?.readyState === 1 ? res() : Date.now() - start > t ? rej('Socket timeout') : setTimeout(check, 100);
+  const start = Date.now();
+  const check = () => {
+    if (conn?.readyState === 1 && isAuthorized) return res();
+    if (Date.now() - start > t) return rej('Socket authorization timeout');
+    setTimeout(check, 100);
+  };
   check();
 });
+
 async function send(payload, cb) {
   payload.req_id = msgId++;
   if (cb) callbacks.set(payload.req_id, cb);
