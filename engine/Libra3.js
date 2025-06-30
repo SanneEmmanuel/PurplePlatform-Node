@@ -98,13 +98,14 @@ export async function trainWithTicks(ticks, epochs = 50) {
     }
 
     // Step 6: Upload to Cloudinary
+try{
     console.log('☁️ Uploading model.json to Cloudinary...');
     const uploadRes = await cloudinary.uploader.upload('./model_dir/model.json', {
       resource_type: 'raw',
       public_id: 'libra_model'
     });
     console.log('☁️ Model uploaded to Cloudinary:', uploadRes.secure_url);
-
+}catch(errs){console.error("Failed to upload",errs);}
     // Step 7: Mark model as ready
     modelReady = true;
     console.log('✅ Model is ready for use');
