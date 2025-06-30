@@ -90,6 +90,7 @@ try{
     console.log('✅ Model saved to ./model_dir');
 }catch(errs){console.error('failed to save to disk',errs);}
     // Step 5: Confirm model.json exists
+   try{
     const fs = await import('fs/promises');
     console.log('📁 Checking model_dir contents...');
     const files = await fs.readdir('./model_dir');
@@ -97,7 +98,7 @@ try{
     if (!files.includes('model.json')) {
       throw new Error('model.json not found after save');
     }
-
+   }catch(errs){console.error("Couldn't Read Directory",errs);}
     // Step 6: Upload to Cloudinary
 try{
     console.log('☁️ Uploading model.json to Cloudinary...');
