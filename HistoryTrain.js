@@ -14,8 +14,7 @@ async function getTicksWithRetry(totalTicks) {
   while (true) {
     try {
       const { ticks } = await getTicksForTraining(totalTicks);
-      if (ticks.length < 300) throw new Error('❌ Not enough ticks');
-      return ticks;
+            return ticks;
     } catch (err) {
       console.warn('⚠️ Tick fetch failed, retrying in 1s...', err.message);
       await new Promise(res => setTimeout(res, 1000));
