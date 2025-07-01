@@ -13,7 +13,7 @@ const ZIP_PATH = './downloads/LibraModel.zip';
 async function getTicksWithRetry(totalTicks) {
   while (true) {
     try {
-      const { ticks } = await getTicksForTraining(totalTicks);
+      const ticks  = await getTicksForTraining(totalTicks);
             return ticks;
     } catch (err) {
       console.warn('⚠️ Tick fetch failed, retrying in 1s...', err.message);
