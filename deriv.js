@@ -258,6 +258,30 @@ const getTicksForTraining = async count => {
   return all.slice(-count);
 };
 
+
+let pingStarted = false;
+export function pingServer() {
+  if (pingStarted) return;
+  pingStarted = true;
+
+  const ping = () => {
+    if (!conn || conn.readyState !== 1) return;
+    const t = Date.now();
+    const h = m => {
+      if (JSON.parse(m.data).ping) {
+        conn.removeEventListener('message', h);
+        console.log(`[🏓 ${Date.now() - t}ms]`);
+      }
+    };
+    conn.addEventListener('message', h);
+    conn.send('{"ping":1}');
+    setTimeout(() => conn.removeEventListener('message', h), 5000);
+  };
+
+  ping();
+  setInterval(ping, 35000);
+}
+
 // Startup
 connect();
 
