@@ -224,12 +224,17 @@ async function reconnectWithNewToken(token) {
   reconnect();
 }
 
-const getCurrentPrice = async () => {
-  ensureAuth(); await waitReady();
-  return new Promise((res, rej) => {
-    send({ ticks: getSymbol() }, d => d.error ? rej(d.error.message) : res(d.tick.quote));
-  });
+let livePrice = null, isPriceStreaming = false;
+const getCurrentPrice = () => {
+  if (!isPriceStreaming) {
+    isPriceStreaming = true;
+    ensureAuth(); waitReady().then(() => {
+      send({ ticks: getSymbol(), subscribe: 1 }, d => d.tick?.quote && (livePrice = d.tick.quote));
+    });
+  }
+  return livePrice;
 };
+
 
 const getLast100Ticks = async () => {
   ensureAuth(); await waitReady();
