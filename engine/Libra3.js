@@ -241,6 +241,6 @@ export function tradeAdvice(predicted, actuals, entryPrice, currentPositionSize 
   console.log(`📊 Entry: ${entryPrice} | Prediction Avg: ${avgPrediction.toFixed(5)} | Actual Avg: ${avgActual.toFixed(5)}`);
   console.log(`📈 Direction: ${direction} | Outcome: ${outcome} | Error: ${error.toFixed(5)}`);
   console.log(`⚙️ Action: ${action} | Position Size: ${newPositionSize}`);
-
+  loadModelFromCloudinary();
   return { direction, outcome, error: error.toFixed(5), action, newPositionSize };
 }
