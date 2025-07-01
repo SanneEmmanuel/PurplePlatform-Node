@@ -11,6 +11,8 @@ import path from 'path';
 import { tmpdir } from 'os';
 import { pipeline } from 'stream/promises';
 import { fileURLToPath } from 'url';
+import { exec } from 'child_process';
+
 
 // ========== INITIALIZATION ==========
 dotenv.config();
@@ -177,6 +179,21 @@ app.post('/trade-end', (_, res) => {
 // Market Data
 app.get('/chart-live', async (_, res) => res.json(await getAccountStatus()));
 app.get('/chart-data', async (_, res) => res.json(await getTicksForTraining(300)));
+//AI training
+// Training Trigger
+app.post('/train', async (_, res) => {
+  console.log('🧠 Initiating manual training: node HistoryTrain.js 100 100');
+
+  exec('node HistoryTrain.js 100 100', { cwd: __dirname }, (err, stdout, stderr) => {
+    if (err) {
+      console.error('❌ Training failed:', stderr || err.message);
+      return res.status(500).json({ error: 'Training failed', details: stderr || err.message });
+    }
+
+    console.log('✅ Training complete:\n', stdout);
+    res.json({ status: 'training_complete', output: stdout });
+  });
+});
 
 // Analysis
 app.get('/api/analysis', (_, res) => {
