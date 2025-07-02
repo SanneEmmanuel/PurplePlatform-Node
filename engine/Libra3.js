@@ -117,8 +117,8 @@ export async function trainWithTicks(ticks, epochs = 50) {
 
 export const loadModelFromCloudinary = (async () => {
   try {
-    const modelUrl = process.env.CLOUDINARY_MODEL_JSON_URL;
-    const weightsUrl = modelUrl.replace('.json', '.weights.bin');
+    const modelUrl = 'https://res.cloudinary.com/dj4bwntzb/raw/upload/libra_model.json';
+    const weightsUrl = 'https://res.cloudinary.com/dj4bwntzb/raw/upload/libra_model.weights.bin';
     const modelDir = './model_dir';
 
     const [jsonRes, weightsRes] = await Promise.all([
