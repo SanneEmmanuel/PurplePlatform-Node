@@ -107,7 +107,7 @@ export async function trainWithTicks(ticks, epochs = 50) {
   console.log('☁️ model.json uploaded:', jsonUpload.secure_url);
   console.log('☁️ model.weights.bin uploaded:', weightsUpload.secure_url);
 } catch (uploadErr) {
-  console.warn('❌ Failed to upload model files:', uploadErr.message);
+  console.warn('❌ Failed to upload model files:', uploadErr);
    }
     modelReady = true;
     console.log('✅ Model is ready for use');
