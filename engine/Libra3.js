@@ -92,17 +92,23 @@ export async function trainWithTicks(ticks, epochs = 50) {
       console.warn('⚠️ model.json not found after save');
     }
 
-    try {
-      console.log('☁️ Uploading model.json to Cloudinary...');
-      const uploadRes = await cloudinary.uploader.upload('./model_dir/model.json', {
-        resource_type: 'raw',
-        public_id: 'libra_model'
-      });
-      console.log('☁️ Model uploaded to Cloudinary:', uploadRes.secure_url);
-    } catch (uploadErr) {
-      console.warn('❌ Failed to upload model to Cloudinary:', uploadErr.message);
-    }
-
+   try {
+  console.log('☁️ Uploading model files to Cloudinary...');
+  const [jsonUpload, weightsUpload] = await Promise.all([
+    cloudinary.uploader.upload('./model_dir/model.json', {
+      resource_type: 'raw',
+      public_id: 'libra_model'
+    }),
+    cloudinary.uploader.upload('./model_dir/model.weights.bin', {
+      resource_type: 'raw',
+      public_id: 'libra_model.weights'
+    })
+  ]);
+  console.log('☁️ model.json uploaded:', jsonUpload.secure_url);
+  console.log('☁️ model.weights.bin uploaded:', weightsUpload.secure_url);
+} catch (uploadErr) {
+  console.warn('❌ Failed to upload model files:', uploadErr.message);
+   }
     modelReady = true;
     console.log('✅ Model is ready for use');
   } catch (err) {
