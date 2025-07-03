@@ -148,11 +148,12 @@ export const loadModelFromCloudinary = (async () => {
   try {
     const modelDir = '/tmp/model_dir';
     const zipPath = '/tmp/downloaded_model.zip';
-    const expiresAt = Math.floor(Date.now() / 1000) + 300; // 5 minutes from now
-    const zipUrl = cloudinary.utils.private_download_url(publicId, 'raw', {
+    const zipUrl = cloudinary.url(publicId, {
+      resource_type: 'raw',
+      sign_url: true,
       type: 'authenticated',
       attachment: true,
-      expires_at: expiresAt
+      expires_at: Math.floor(Date.now() / 1000) + 600 // 10 minutes
     });
     
     fs.mkdirSync('/tmp', { recursive: true });
