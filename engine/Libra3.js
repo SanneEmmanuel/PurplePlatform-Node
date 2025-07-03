@@ -109,7 +109,7 @@ export async function trainWithTicks(ticks, epochs = 50) {
           return await cloudinary.uploader.upload(filePath, {
   resource_type: 'raw',
   public_id: publicId,         
-  type: 'authenticated',          // ⚠️ This ensures it's private. Default is 'upload'
+  type: 'upload',          // ⚠️ This ensures it's private. Default is 'upload'
 });
 
         } catch (err) {
@@ -151,7 +151,7 @@ export const loadModelFromCloudinary = (async () => {
     const zipUrl = cloudinary.url(publicId, {
       resource_type: 'raw',
       sign_url: true,
-      type: 'authenticated',
+      type: 'upload',
       attachment: true,
       expires_at: Math.floor(Date.now() / 1000) + 600 // 10 minutes
     });
@@ -211,7 +211,7 @@ export async function uploadModelFromDisk(filepath = './model_dir/model.json') {
   try {
     const res = await cloudinary.uploader.upload(filepath, {
       resource_type: 'raw',
-      public_id: 'libra_model_manual'
+      public_id: publicId
     });
     console.log('☁️ Manual upload complete:', res.secure_url);
   } catch (err) {
