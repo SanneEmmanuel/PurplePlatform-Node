@@ -158,12 +158,10 @@ export const loadModelFromCloudinary = (async () => {
     
     fs.mkdirSync('/tmp', { recursive: true });
     console.log('📥 Downloading model ZIP from Cloudinary...');
-    const res = await fetch(zipUrl);
-
-    if (!res.ok) {
-      console.error('🚫 ZIP download failed:', res.statusText);
-      return;
-    }
+    //Download and retry
+    const res = await (async (u,r=3,d=1000)=>{while(r--){const x=await fetch(u).catch(()=>({}));if(x.ok)return x;
+     console.error(`🚫 ZIP download failed${r?' (retrying...)':''}:`,x.statusText||'Network error');
+     if(r)await new Promise(y=>setTimeout(y,d))}})(zipUrl);
 
     fs.writeFileSync(zipPath, await res.buffer());
     console.log(`📦 ZIP saved to ${zipPath}`);
