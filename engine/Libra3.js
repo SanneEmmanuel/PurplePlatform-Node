@@ -35,6 +35,7 @@ function buildModel() {
   return m;
 }
 function extractDataset(ticks) {
+function extractDataset(ticks) {
   if (ticks.length < 300) return console.error('📉 Insufficient data (min 300 ticks)') || null;
   
   return tf.tidy(() => {
@@ -46,25 +47,30 @@ function extractDataset(ticks) {
       for (let j = start + 1; j < end; j++) {
         const prev = getValue(ticks[j - 1]), curr = getValue(ticks[j]);
         if (!prev || !curr || prev <= 0 || curr <= 0) return null;
-        result.push(isLabel ? Math.log(curr / prev) : [Math.log(curr / prev)]);
+        const logChange = Math.log(curr / prev);
+        result.push(isLabel ? logChange : [logChange]); // ✅ key fix
       }
       return result;
     };
 
     for (let i = 0; i <= ticks.length - 300; i++) {
-      const input = processWindow(i, i + 296, false);
+      const input = processWindow(i, i + 296, false); // returns [ [x1], [x2], ... ]
       if (!input) continue;
-      
-      const label = processWindow(i + 295, i + 300, true);
+
+      const label = processWindow(i + 295, i + 300, true); // returns [y1, y2, ...]
       if (!label) continue;
-      
-      inputs.push(input);
-      labels.push(label);
+
+      inputs.push(input);     // shape: [ [ [x], [x], ... ], ... ]
+      labels.push(label);     // shape: [ [y, y, ...], ... ]
     }
-    
-    return { xs: tf.tensor3d(inputs), ys: tf.tensor2d(labels) };
+
+    return {
+      xs: tf.tensor3d(inputs), // shape: [batch, 295, 1]
+      ys: tf.tensor2d(labels)  // shape: [batch, 5]
+    };
   });
 }
+
 
 function decodeLogReturns(base, encodedReturns) {
   return encodedReturns.reduce((arr, logChange) => {
