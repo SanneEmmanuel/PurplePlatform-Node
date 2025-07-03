@@ -82,8 +82,10 @@ export async function trainWithTicks(ticks, epochs = 50) {
     console.log('✅ Training complete');
 
     console.log('💾 Saving model to disk...');
-    await model.save('file://./tmp/model_dir');
-    console.log('✅ Model saved to ./tmp/model_dir');
+    const saveDir = './tmp/model_dir';
+   fs.existsSync(saveDir) || (fs.mkdirSync(saveDir, { recursive: true }) && console.log(`📁 Created: ${saveDir}`));
+   await model.save(`file://${saveDir}`);
+   console.log(`✅ Model saved to ${saveDir}`);
 
     const fsPromises = await import('fs/promises');
     const files = await fsPromises.readdir('./tmp/model_dir');
