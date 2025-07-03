@@ -34,7 +34,8 @@ function buildModel() {
   m.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
   return m;
 }
-function extractDataset(ticks) {
+
+
 function extractDataset(ticks) {
   if (ticks.length < 300) return console.error('📉 Insufficient data (min 300 ticks)') || null;
   
