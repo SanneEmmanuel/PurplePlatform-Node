@@ -94,7 +94,12 @@ export async function trainWithTicks(ticks, epochs = 50) {
 
   try {
     dataset = extractDataset(ticks); // Converts prices to log returns for training
-    if (!dataset) return;
+    if (!dataset || dataset.xs.shape[0] === 0) {
+  console.warn('❌ No valid dataset extracted from ticks.');
+  return;
+}
+console.log(`📊 Dataset ready: ${dataset.xs.shape[0]} samples`);
+
     console.log('✅ Dataset extracted');
 
     if (!modelReady) {
