@@ -36,7 +36,6 @@ function buildModel() {
 }
 
 function extractDataset(ticks) {
-  console.log(`✊First Value is ${ticks[0]}`);
   if (!Array.isArray(ticks)) return null;
   if (ticks.length < 300) return null;
 
@@ -71,9 +70,10 @@ function extractDataset(ticks) {
         labels.push(label);
       }
     }
-if (inputs.length === 0) {
-    console.warn('⚠️ Example bad tick:', ticks.find(t => !getPrice(t) || getPrice(t) <= 0));
-  }
+const badTick = ticks.find(t => !getPrice(t) || getPrice(t) <= 0);
+console.warn('⚠️ Example bad tick object:', badTick);
+console.warn('⚠️ Extracted price:', getPrice(badTick));
+
     return inputs.length ? {
       xs: tf.tensor3d(inputs, [inputs.length, 295, 1]),
       ys: tf.tensor2d(labels, [labels.length, 5])
