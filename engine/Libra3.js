@@ -36,6 +36,9 @@ function buildModel() {
 }
 
 function extractDataset(ticks) {
+  console.log(`📏 Total ticks: ${ticks.length}`);
+console.log(`🧪 Type of ticks[0]:`, typeof ticks[0]);
+console.log('🧪 Sample ticks:', ticks.slice(0, 10));
   if (!Array.isArray(ticks)) return null;
   if (ticks.length < 301) return null; // Need at least 296+5 ticks
 
