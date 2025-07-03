@@ -82,33 +82,44 @@ export async function trainWithTicks(ticks, epochs = 50) {
     console.log('✅ Training complete');
 
     console.log('💾 Saving model to disk...');
-    await model.save('file://./model_dir');
-    console.log('✅ Model saved to ./model_dir');
+    await model.save('file://./tmp/model_dir');
+    console.log('✅ Model saved to ./tmp/model_dir');
 
     const fsPromises = await import('fs/promises');
-    const files = await fsPromises.readdir('./model_dir');
+    const files = await fsPromises.readdir('./tmp/model_dir');
     console.log('📃 model_dir contains:', files);
     if (!files.includes('model.json')) {
       console.warn('⚠️ model.json not found after save');
     }
 
-   try {
+   // Retry upload helper
+async function retryUpload(filePath, publicId, retries = 3, delay = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await cloudinary.uploader.upload(filePath, {
+        resource_type: 'raw',
+        public_id: publicId
+      });
+    } catch (err) {
+      console.warn(`⏳ Upload failed for ${path.basename(filePath)}. Retry ${i + 1}/${retries}`);
+      if (i === retries - 1) throw err;
+      await new Promise(res => setTimeout(res, delay));
+    }
+  }
+}
+
+// Uploading model files
+try {
   console.log('☁️ Uploading model files to Cloudinary...');
   const [jsonUpload, weightsUpload] = await Promise.all([
-    cloudinary.uploader.upload('./model_dir/model.json', {
-      resource_type: 'raw',
-      public_id: 'libra_model'
-    }),
-    cloudinary.uploader.upload('./model_dir/model.weights.bin', {
-      resource_type: 'raw',
-      public_id: 'libra_model.weights'
-    })
+    retryUpload('./tmp/model_dir/model.json', 'libra_model'),
+    retryUpload('./tmp/model_dir/weights.bin', 'libra_model.weights')
   ]);
   console.log('☁️ model.json uploaded:', jsonUpload.secure_url);
-  console.log('☁️ model.weights.bin uploaded:', weightsUpload.secure_url);
+  console.log('☁️ weights.bin uploaded:', weightsUpload.secure_url);
 } catch (uploadErr) {
   console.warn('❌ Failed to upload model files:', uploadErr);
-   }
+}
     modelReady = true;
     console.log('✅ Model is ready for use');
   } catch (err) {
@@ -125,7 +136,7 @@ export const loadModelFromCloudinary = (async () => {
   try {
     const modelUrl = 'https://res.cloudinary.com/dj4bwntzb/raw/upload/libra_model.json';
     const weightsUrl = 'https://res.cloudinary.com/dj4bwntzb/raw/upload/libra_model.weights.bin';
-    const modelDir = './model_dir';
+    const modelDir = './tmp/model_dir';
 
     const [jsonRes, weightsRes] = await Promise.all([
       fetch(modelUrl),
@@ -170,7 +181,7 @@ export async function downloadCurrentModel(destination = './downloaded_model.zip
 
     archive.on('error', err => reject(err));
     archive.pipe(output);
-    archive.directory('./model_dir/', false);
+    archive.directory('./tmp/model_dir/', false);
     archive.finalize();
   });
 }
