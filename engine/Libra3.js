@@ -103,7 +103,7 @@ export async function trainWithTicks(ticks, epochs = 50) {
     console.log(`📦 Zipped model to ${zipPath}`);
 
     // Upload ZIP with retries
-    async function retryUpload(filePath, publicId, retries = 3, delay = 2000) {
+    async function retryUpload(filePath, retries = 3, delay = 2000) {
       for (let i = 0; i < retries; i++) {
         try {
           return await cloudinary.uploader.upload(filePath, {
@@ -122,7 +122,7 @@ export async function trainWithTicks(ticks, epochs = 50) {
 
     try {
       console.log('☁️ Uploading model ZIP to Cloudinary...');
-      const uploaded = await retryUpload(zipPath, 'libra_model_zip');
+      const uploaded = await retryUpload(zipPath);
       console.log('☁️ ZIP uploaded:', uploaded.secure_url);
     } catch (uploadErr) {
       console.warn('❌ Failed to upload ZIP:', uploadErr);
