@@ -41,26 +41,26 @@ function extractDataset(ticks) {
 
   return tf.tidy(() => {
     const inputs = [], labels = [];
+    const maxStart = ticks.length - 299 + 4; // so i + 299 ≤ ticks.length - 1
 
-    for (let i = 4; i <= ticks.length - 300; i++) {
+    for (let i = 4; i < maxStart; i++) {
       let valid = true;
       const input = [], label = [];
 
-      // First feature: log(curr / SMA5)
-      const smaWindow = ticks.slice(i - 4, i + 1);
-      const sma = smaWindow.reduce((a, b) => a + b, 0) / smaWindow.length;
+      // ⛳ 1. SMA-based derivative
+      const sma = ticks.slice(i - 4, i + 1).reduce((a, b) => a + b, 0) / 5;
       const base = ticks[i];
       if (!base || !sma || base <= 0 || sma <= 0) continue;
-      input.push([Math.log(base / sma)]); // first log
+      input.push([Math.log(base / sma)]);
 
-      // Next 294: regular log returns
+      // ⛳ 2. Input sequence: log returns from tick[i] to tick[i + 294]
       for (let j = i; j < i + 294; j++) {
         const curr = ticks[j], next = ticks[j + 1];
         if (!curr || !next || curr <= 0 || next <= 0) { valid = false; break; }
         input.push([Math.log(next / curr)]);
       }
 
-      // Labels: 5 future log returns
+      // ⛳ 3. Output sequence: log returns from tick[i+294] to tick[i+299]
       if (valid) {
         for (let k = i + 294; k < i + 299; k++) {
           const curr = ticks[k], next = ticks[k + 1];
@@ -86,6 +86,7 @@ function extractDataset(ticks) {
     } : null;
   });
 }
+
 
 
 
