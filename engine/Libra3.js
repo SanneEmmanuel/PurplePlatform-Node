@@ -92,10 +92,10 @@ function decodeLogReturns(base, encodedReturns) {
 }
 
 export async function trainWithTicks(ticks, epochs = 50) {
-  console.log('🔍 Starting training with', ticks.length, 'ticks');
+  console.log('✊ First Tick:', ticks[0]);
   let dataset;
 
-  try {
+  try {console.log
     dataset = extractDataset(ticks); // Converts prices to log returns for training
     if (!dataset || dataset.xs.shape[0] === 0) {
   console.warn('❌ No valid dataset extracted from ticks.');
