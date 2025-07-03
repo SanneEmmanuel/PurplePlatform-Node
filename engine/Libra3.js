@@ -36,7 +36,7 @@ function buildModel() {
 }
 
 function extractDataset(ticks) {
-  if (!Array.isArray(ticks) return null;
+  if (!Array.isArray(ticks)) return null;
   if (ticks.length < 300) return null;
 
   return tf.tidy(() => {
