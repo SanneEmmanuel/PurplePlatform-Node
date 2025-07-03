@@ -133,6 +133,9 @@ export async function trainWithTicks(ticks, epochs = 50) {
   } catch (err) {
     console.error('💥 Training process failed:', err.message);
   } finally {
+    cloudinary.api.resource(publicId, { resource_type: 'raw' })
+  .then(res => console.log('✅ Verification File exists:', res.secure_url))
+  .catch(err => console.error('❌ Verification File not found:', err.message));
     if (dataset) {
       tf.dispose([dataset.xs, dataset.ys]);
       console.log('🧹 Tensors disposed');
