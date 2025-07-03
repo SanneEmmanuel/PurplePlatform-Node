@@ -14,7 +14,7 @@ cloudinary.config({
   api_key: '354656419316393', 
   api_secret: 'M-Trl9ltKDHyo1dIP2AaLOG-WPM' 
 });
-const publicId = 'libra_model_zip'; 
+const publicId = 'libra_v3'; 
 if (!cloudinary.config().cloud_name || !cloudinary.config().api_key) {
   console.warn('❌ Cloudinary config invalid — Uploads may fail');
 }
