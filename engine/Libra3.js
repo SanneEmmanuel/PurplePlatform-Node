@@ -36,7 +36,7 @@ function buildModel() {
 }
 
 function extractDataset(ticks) {
-  console.log(`✊First Value is ${tick[0]}`);
+  console.log(`✊First Value is ${ticks[0]}`);
   if (!Array.isArray(ticks)) return null;
   if (ticks.length < 300) return null;
 
