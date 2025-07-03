@@ -108,10 +108,7 @@ export async function trainWithTicks(ticks, epochs = 50) {
         try {
           return await cloudinary.uploader.upload(filePath, {
   resource_type: 'raw',
-  public_id: publicId,
-  use_filename: true,
-  unique_filename: false,
-  overwrite: true,         
+  public_id: publicId,         
   type: 'authenticated',          // ⚠️ This ensures it's private. Default is 'upload'
 });
 
