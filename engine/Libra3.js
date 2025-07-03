@@ -171,6 +171,12 @@ export const loadModelFromCloudinary = (async () => {
     console.log('✅ Model and weights loaded from Cloudinary');
   } catch (err) {
     console.error('❌ Failed to load model from Cloudinary:', err.message);
+    await cloudinary.uploader.destroy('libra_model_zip', {
+  resource_type: 'raw',
+  type: 'upload'
+});
+console.log('🗑️ Destroyed previous libra_model_zip');
+
   }
 })();
 
