@@ -34,26 +34,46 @@ function buildModel() {
   m.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
   return m;
 }
-
 function extractDataset(ticks) {
-  if (ticks.length < 300) {
-    console.error('📉 Insufficient data (min 300 ticks)');
-    return null;
-  }
+  if (ticks.length < 300) return console.error('📉 Insufficient data (min 300 ticks)') || null;
+  
   return tf.tidy(() => {
     const inputs = [], labels = [];
+    
+    const getValue = t => t.close || t.quote;
+    const processWindow = (start, end, isLabel) => {
+      const result = [];
+      for (let j = start + 1; j < end; j++) {
+        const prev = getValue(ticks[j - 1]), curr = getValue(ticks[j]);
+        if (!prev || !curr || prev <= 0 || curr <= 0) return null;
+        result.push(isLabel ? Math.log(curr / prev) : [Math.log(curr / prev)]);
+      }
+      return result;
+    };
+
     for (let i = 0; i <= ticks.length - 300; i++) {
-      const input = ticks.slice(i, i + 295).map(t => [t.close || t.quote]);
-      const label = ticks.slice(i + 295, i + 300).map(t => t.close || t.quote);
+      const input = processWindow(i, i + 296, false);
+      if (!input) continue;
+      
+      const label = processWindow(i + 295, i + 300, true);
+      if (!label) continue;
+      
       inputs.push(input);
       labels.push(label);
     }
-    return {
-      xs: tf.tensor3d(inputs),
-      ys: tf.tensor2d(labels)
-    };
+    
+    return { xs: tf.tensor3d(inputs), ys: tf.tensor2d(labels) };
   });
 }
+
+function decodeLogReturns(base, encodedReturns) {
+  return encodedReturns.reduce((arr, logChange) => {
+    const next = arr[arr.length - 1] * Math.exp(logChange);
+    return [...arr, next];
+  }, [base]).slice(1);
+}
+
+
 export async function trainWithTicks(ticks, epochs = 50) {
   console.log('🔍 Starting training with', ticks.length, 'ticks');
   let dataset;
