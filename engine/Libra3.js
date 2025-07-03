@@ -37,38 +37,91 @@ function buildModel() {
 
 
 function extractDataset(ticks) {
-  if (ticks.length < 300) return console.error('📉 Insufficient data (min 300 ticks)') || null;
+  // Validate input
+  if (!Array.isArray(ticks) {
+    console.error('❌ Ticks must be an array');
+    return null;
+  }
   
+  if (ticks.length < 300) {
+    console.error(`❌ Insufficient data (got ${ticks.length}, need 300+)`);
+    return null;
+  }
+
   return tf.tidy(() => {
-    const inputs = [], labels = [];
-    
-    const getValue = t => t.close || t.quote;
-    const processWindow = (start, end, isLabel) => {
-      const result = [];
-      for (let j = start + 1; j < end; j++) {
-        const prev = getValue(ticks[j - 1]), curr = getValue(ticks[j]);
-        if (!prev || !curr || prev <= 0 || curr <= 0) return null;
-        const logChange = Math.log(curr / prev);
-        result.push(isLabel ? logChange : [logChange]); // ✅ key fix
+    const inputs = [];
+    const labels = [];
+    const windowSize = 295; // Input window
+    const predictionSize = 5; // Output window
+
+    try {
+      // Process each sliding window
+      for (let i = 0; i <= ticks.length - (windowSize + predictionSize); i++) {
+        const inputWindow = [];
+        const labelWindow = [];
+        let validWindow = true;
+
+        // Process input window (295 ticks)
+        for (let j = i; j < i + windowSize; j++) {
+          const current = ticks[j]?.close ?? ticks[j]?.quote;
+          const next = ticks[j + 1]?.close ?? ticks[j + 1]?.quote;
+
+          if (!current || !next || current <= 0 || next <= 0) {
+            validWindow = false;
+            break;
+          }
+
+          const logReturn = Math.log(next / current);
+          inputWindow.push([logReturn]); // Each feature as [value]
+        }
+
+        // Process label window (next 5 ticks)
+        if (validWindow) {
+          const basePrice = ticks[i + windowSize]?.close ?? ticks[i + windowSize]?.quote;
+          
+          for (let k = i + windowSize; k < i + windowSize + predictionSize; k++) {
+            const current = ticks[k]?.close ?? ticks[k]?.quote;
+            const next = ticks[k + 1]?.close ?? ticks[k + 1]?.quote;
+
+            if (!current || !next || current <= 0 || next <= 0) {
+              validWindow = false;
+              break;
+            }
+
+            const logReturn = Math.log(next / current);
+            labelWindow.push(logReturn);
+          }
+        }
+
+        // Only add complete windows
+        if (validWindow && 
+            inputWindow.length === windowSize && 
+            labelWindow.length === predictionSize) {
+          inputs.push(inputWindow);
+          labels.push(labelWindow);
+        }
       }
-      return result;
-    };
 
-    for (let i = 0; i <= ticks.length - 300; i++) {
-      const input = processWindow(i, i + 296, false); // returns [ [x1], [x2], ... ]
-      if (!input) continue;
+      // Final validation
+      if (inputs.length === 0 || labels.length === 0) {
+        console.error('❌ No valid training windows created');
+        return null;
+      }
 
-      const label = processWindow(i + 295, i + 300, true); // returns [y1, y2, ...]
-      if (!label) continue;
+      console.log(`✅ Generated ${inputs.length} training samples`);
+      console.log(`Sample input shape: [${inputs[0].length}, ${inputs[0][0].length}]`);
+      console.log(`Sample label shape: [${labels[0].length}]`);
 
-      inputs.push(input);     // shape: [ [ [x], [x], ... ], ... ]
-      labels.push(label);     // shape: [ [y, y, ...], ... ]
+      // Create tensors with EXPLICIT shapes
+      return {
+        xs: tf.tensor3d(inputs, [inputs.length, windowSize, 1]),
+        ys: tf.tensor2d(labels, [labels.length, predictionSize])
+      };
+
+    } catch (error) {
+      console.error('❌ Error in extractDataset:', error.message);
+      return null;
     }
-
-    return {
-      xs: tf.tensor3d(inputs), // shape: [batch, 295, 1]
-      ys: tf.tensor2d(labels)  // shape: [batch, 5]
-    };
   });
 }
 
