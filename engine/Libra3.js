@@ -35,95 +35,50 @@ function buildModel() {
   return m;
 }
 
-
 function extractDataset(ticks) {
-  // Validate input
-  if (!Array.isArray(ticks) {
-    console.error('❌ Ticks must be an array');
-    return null;
-  }
-  
-  if (ticks.length < 300) {
-    console.error(`❌ Insufficient data (got ${ticks.length}, need 300+)`);
-    return null;
-  }
+  if (!Array.isArray(ticks) return null;
+  if (ticks.length < 300) return null;
 
   return tf.tidy(() => {
-    const inputs = [];
-    const labels = [];
-    const windowSize = 295; // Input window
-    const predictionSize = 5; // Output window
+    const inputs = [], labels = [];
+    const getPrice = t => t?.close ?? t?.quote;
 
-    try {
-      // Process each sliding window
-      for (let i = 0; i <= ticks.length - (windowSize + predictionSize); i++) {
-        const inputWindow = [];
-        const labelWindow = [];
-        let validWindow = true;
+    for (let i = 0; i <= ticks.length - 300; i++) {
+      const input = [], label = [];
+      let valid = true;
 
-        // Process input window (295 ticks)
-        for (let j = i; j < i + windowSize; j++) {
-          const current = ticks[j]?.close ?? ticks[j]?.quote;
-          const next = ticks[j + 1]?.close ?? ticks[j + 1]?.quote;
+      // Process input window (295 ticks)
+      for (let j = i; j < i + 295; j++) {
+        const curr = getPrice(ticks[j]);
+        const next = getPrice(ticks[j + 1]);
+        if (!curr || !next || curr <= 0) { valid = false; break; }
+        input.push([Math.log(next / curr)]);
+      }
 
-          if (!current || !next || current <= 0 || next <= 0) {
-            validWindow = false;
-            break;
-          }
-
-          const logReturn = Math.log(next / current);
-          inputWindow.push([logReturn]); // Each feature as [value]
-        }
-
-        // Process label window (next 5 ticks)
-        if (validWindow) {
-          const basePrice = ticks[i + windowSize]?.close ?? ticks[i + windowSize]?.quote;
-          
-          for (let k = i + windowSize; k < i + windowSize + predictionSize; k++) {
-            const current = ticks[k]?.close ?? ticks[k]?.quote;
-            const next = ticks[k + 1]?.close ?? ticks[k + 1]?.quote;
-
-            if (!current || !next || current <= 0 || next <= 0) {
-              validWindow = false;
-              break;
-            }
-
-            const logReturn = Math.log(next / current);
-            labelWindow.push(logReturn);
-          }
-        }
-
-        // Only add complete windows
-        if (validWindow && 
-            inputWindow.length === windowSize && 
-            labelWindow.length === predictionSize) {
-          inputs.push(inputWindow);
-          labels.push(labelWindow);
+      // Process labels (next 5 ticks)
+      if (valid) {
+        for (let k = i + 295; k < i + 300; k++) {
+          const curr = getPrice(ticks[k]);
+          const next = getPrice(ticks[k + 1]);
+          if (!curr || !next || curr <= 0) { valid = false; break; }
+          label.push(Math.log(next / curr));
         }
       }
 
-      // Final validation
-      if (inputs.length === 0 || labels.length === 0) {
-        console.error('❌ No valid training windows created');
-        return null;
+      if (valid && input.length === 295 && label.length === 5) {
+        inputs.push(input);
+        labels.push(label);
       }
-
-      console.log(`✅ Generated ${inputs.length} training samples`);
-      console.log(`Sample input shape: [${inputs[0].length}, ${inputs[0][0].length}]`);
-      console.log(`Sample label shape: [${labels[0].length}]`);
-
-      // Create tensors with EXPLICIT shapes
-      return {
-        xs: tf.tensor3d(inputs, [inputs.length, windowSize, 1]),
-        ys: tf.tensor2d(labels, [labels.length, predictionSize])
-      };
-
-    } catch (error) {
-      console.error('❌ Error in extractDataset:', error.message);
-      return null;
     }
+
+    return inputs.length ? {
+      xs: tf.tensor3d(inputs, [inputs.length, 295, 1]),
+      ys: tf.tensor2d(labels, [labels.length, 5])
+    } : null;
   });
 }
+   
+          
 
 
 function decodeLogReturns(base, encodedReturns) {
