@@ -63,8 +63,10 @@ export async function trainWithTicks(ticks, epochs = 50) {
     if (!dataset) return;
     console.log('✅ Dataset extracted');
 
+    if(!modelReady){
     model = buildModel();
-    console.log('🧠 Model built successfully');
+    console.log('🧠 Model built Afresh successfully');}
+    else{console.log('Model Resuming Training');}
 
     console.log('📦 Training model...');
     await model.fit(dataset.xs, dataset.ys, {
