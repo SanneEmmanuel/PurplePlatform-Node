@@ -54,7 +54,6 @@ function extractDataset(ticks) {
     };
   });
 }
-
 export async function trainWithTicks(ticks, epochs = 50) {
   console.log('🔍 Starting training with', ticks.length, 'ticks');
   let dataset;
@@ -73,55 +72,60 @@ export async function trainWithTicks(ticks, epochs = 50) {
       batchSize: 32,
       shuffle: true,
       callbacks: {
-        onEpochBegin: epoch => console.log(`🚀 Epoch ${epoch + 1}/${epochs}`),
-        onEpochEnd: (epoch, logs) => {
-          console.log(`📉 Epoch ${epoch + 1} Loss: ${logs.loss?.toFixed(6)}`);
-        }
+        onEpochBegin: e => console.log(`🚀 Epoch ${e + 1}/${epochs}`),
+        onEpochEnd: (e, logs) => console.log(`📉 Epoch ${e + 1} Loss: ${logs.loss?.toFixed(6)}`)
       }
     });
     console.log('✅ Training complete');
 
-    console.log('💾 Saving model to disk...');
-    const saveDir = './tmp/model_dir';
-   fs.existsSync(saveDir) || (fs.mkdirSync(saveDir, { recursive: true }) && console.log(`📁 Created: ${saveDir}`));
-   await model.save(`file://${saveDir}`);
-   console.log(`✅ Model saved to ${saveDir}`);
+    const saveDir = '/tmp/model_dir';
+    fs.existsSync(saveDir) || (fs.mkdirSync(saveDir, { recursive: true }) && console.log(`📁 Created: ${saveDir}`));
+    await model.save(`file://${saveDir}`);
+    console.log(`✅ Model saved to ${saveDir}`);
 
     const fsPromises = await import('fs/promises');
-    const files = await fsPromises.readdir('./tmp/model_dir');
+    const files = await fsPromises.readdir(saveDir);
     console.log('📃 model_dir contains:', files);
-    if (!files.includes('model.json')) {
-      console.warn('⚠️ model.json not found after save');
+    if (!files.includes('model.json')) console.warn('⚠️ model.json not found after save');
+
+    // Create ZIP of model_dir
+    const zipPath = '/tmp/model.zip';
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    const output = fs.createWriteStream(zipPath);
+    const zipComplete = new Promise((res, rej) => {
+      output.on('close', res);
+      archive.on('error', rej);
+    });
+    archive.pipe(output);
+    archive.directory(saveDir, false);
+    archive.finalize();
+    await zipComplete;
+    console.log(`📦 Zipped model to ${zipPath}`);
+
+    // Upload ZIP with retries
+    async function retryUpload(filePath, publicId, retries = 3, delay = 2000) {
+      for (let i = 0; i < retries; i++) {
+        try {
+          return await cloudinary.uploader.upload(filePath, {
+            resource_type: 'raw',
+            public_id: publicId
+          });
+        } catch (err) {
+          console.warn(`⏳ Upload failed for ${path.basename(filePath)}. Retry ${i + 1}/${retries}`);
+          if (i === retries - 1) throw err;
+          await new Promise(res => setTimeout(res, delay));
+        }
+      }
     }
 
-   // Retry upload helper
-async function retryUpload(filePath, publicId, retries = 3, delay = 2000) {
-  for (let i = 0; i < retries; i++) {
     try {
-      return await cloudinary.uploader.upload(filePath, {
-        resource_type: 'raw',
-        public_id: publicId
-      });
-    } catch (err) {
-      console.warn(`⏳ Upload failed for ${path.basename(filePath)}. Retry ${i + 1}/${retries}`);
-      if (i === retries - 1) throw err;
-      await new Promise(res => setTimeout(res, delay));
+      console.log('☁️ Uploading model ZIP to Cloudinary...');
+      const uploaded = await retryUpload(zipPath, 'libra_model_zip');
+      console.log('☁️ ZIP uploaded:', uploaded.secure_url);
+    } catch (uploadErr) {
+      console.warn('❌ Failed to upload ZIP:', uploadErr);
     }
-  }
-}
 
-// Uploading model files
-try {
-  console.log('☁️ Uploading model files to Cloudinary...');
-  const [jsonUpload, weightsUpload] = await Promise.all([
-    retryUpload('./tmp/model_dir/model.json', 'libra_model'),
-    retryUpload('./tmp/model_dir/weights.bin', 'libra_model.weights')
-  ]);
-  console.log('☁️ model.json uploaded:', jsonUpload.secure_url);
-  console.log('☁️ weights.bin uploaded:', weightsUpload.secure_url);
-} catch (uploadErr) {
-  console.warn('❌ Failed to upload model files:', uploadErr);
-}
     modelReady = true;
     console.log('✅ Model is ready for use');
   } catch (err) {
@@ -134,38 +138,37 @@ try {
   }
 }
 
+
 export const loadModelFromCloudinary = (async () => {
   try {
-    const modelUrl = 'https://res.cloudinary.com/dj4bwntzb/raw/upload/libra_model.json';
-    const weightsUrl = 'https://res.cloudinary.com/dj4bwntzb/raw/upload/libra_model.weights.bin';
-    const modelDir = './tmp/model_dir';
+    const modelDir = '/tmp/model_dir';
+    const zipPath = '/tmp/downloaded_model.zip';
+    const zipUrl = 'https://res.cloudinary.com/dj4bwntzb/raw/upload/libra_model_zip.zip';
 
-    const [jsonRes, weightsRes] = await Promise.all([
-      fetch(modelUrl),
-      fetch(weightsUrl)
-    ]);
+    fs.mkdirSync('/tmp', { recursive: true });
+    console.log('📥 Downloading model ZIP from Cloudinary...');
+    const res = await fetch(zipUrl);
 
-    if (!jsonRes.ok || !weightsRes.ok) {
-      console.error('🚫 Download failed');
+    if (!res.ok) {
+      console.error('🚫 ZIP download failed:', res.statusText);
       return;
     }
 
-    const [json, weights] = await Promise.all([
-      jsonRes.text(),
-      weightsRes.arrayBuffer()
-    ]);
+    fs.writeFileSync(zipPath, await res.buffer());
+    console.log(`📦 ZIP saved to ${zipPath}`);
 
-    fs.mkdirSync(modelDir, { recursive: true });
-    fs.writeFileSync(`${modelDir}/model.json`, json);
-    fs.writeFileSync(`${modelDir}/model.weights.bin`, Buffer.from(weights));
+    const unzipper = await import('unzipper');
+    await fs.createReadStream(zipPath).pipe(unzipper.Extract({ path: modelDir })).promise();
+    console.log(`🗂️ ZIP extracted to ${modelDir}`);
 
     model = await tf.loadLayersModel(`file://${path.resolve(modelDir)}/model.json`);
     modelReady = true;
-    console.log('📥 Model loaded from Cloudinary');
+    console.log('✅ Model and weights loaded from Cloudinary');
   } catch (err) {
     console.error('❌ Failed to load model from Cloudinary:', err.message);
   }
 })();
+
 
 export function isModelReady() {
   return modelReady;
@@ -177,7 +180,7 @@ export async function downloadCurrentModel(destination = './downloaded_model.zip
     const archive = archiver('zip', { zlib: { level: 9 } });
 
     output.on('close', () => {
-      console.log(`📦 Model archived: ${archive.pointer()} bytes`);
+      cnsole.log(`📦 Model archived: ${archive.pointer()} bytes`);
       resolve();
     });
 
