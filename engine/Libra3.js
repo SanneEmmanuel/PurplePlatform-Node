@@ -107,9 +107,14 @@ export async function trainWithTicks(ticks, epochs = 50) {
       for (let i = 0; i < retries; i++) {
         try {
           return await cloudinary.uploader.upload(filePath, {
-            resource_type: 'raw',
-            public_id: publicId
-          });
+  resource_type: 'raw',
+  public_id: publicId,
+  use_filename: true,
+  unique_filename: false,
+  overwrite: true,         // Optional: replace if it exists
+  type: 'upload',          // ⚠️ This ensures it's public. Default is 'upload'
+});
+
         } catch (err) {
           console.warn(`⏳ Upload failed for ${path.basename(filePath)}. Retry ${i + 1}/${retries}`);
           if (i === retries - 1) throw err;
@@ -180,7 +185,7 @@ export async function downloadCurrentModel(destination = './downloaded_model.zip
     const archive = archiver('zip', { zlib: { level: 9 } });
 
     output.on('close', () => {
-      cnsole.log(`📦 Model archived: ${archive.pointer()} bytes`);
+      console.log(`📦 Model archived: ${archive.pointer()} bytes`);
       resolve();
     });
 
