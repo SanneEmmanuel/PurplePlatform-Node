@@ -41,8 +41,8 @@ function extractDataset(ticks) {
 
   return tf.tidy(() => {
     const inputs = [], labels = [];
-    const getPrice = t => t?.close ?? t?.quote;
-
+    const getPrice = t => typeof t === 'number' ? t : (t?.close ?? t?.quote);
+    
     for (let i = 0; i <= ticks.length - 300; i++) {
       const input = [], label = [];
       let valid = true;
@@ -70,9 +70,11 @@ function extractDataset(ticks) {
         labels.push(label);
       }
     }
+    if(inputs.length===0){
 const badTick = ticks.find(t => !getPrice(t) || getPrice(t) <= 0);
 console.warn('⚠️ Example bad tick object:', badTick);
 console.warn('⚠️ Extracted price:', getPrice(badTick));
+    }
 
     return inputs.length ? {
       xs: tf.tensor3d(inputs, [inputs.length, 295, 1]),
