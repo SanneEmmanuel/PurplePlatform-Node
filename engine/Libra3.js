@@ -73,20 +73,21 @@ function decodeLogReturns(base, encodedReturns) {
   }, [base]).slice(1);
 }
 
-
 export async function trainWithTicks(ticks, epochs = 50) {
   console.log('🔍 Starting training with', ticks.length, 'ticks');
   let dataset;
 
   try {
-    dataset = extractDataset(ticks);
+    dataset = extractDataset(ticks); // Converts prices to log returns for training
     if (!dataset) return;
     console.log('✅ Dataset extracted');
 
-    if(!modelReady){
-    model = buildModel();
-    console.log('🧠 Model built Afresh successfully');}
-    else{console.log('Model Resuming Training');}
+    if (!modelReady) {
+      model = buildModel();
+      console.log('🧠 Model built Afresh successfully');
+    } else {
+      console.log('📡 Resuming training with loaded model...');
+    }
 
     console.log('📦 Training model...');
     await model.fit(dataset.xs, dataset.ys, {
@@ -110,7 +111,7 @@ export async function trainWithTicks(ticks, epochs = 50) {
     console.log('📃 model_dir contains:', files);
     if (!files.includes('model.json')) console.warn('⚠️ model.json not found after save');
 
-    // Create ZIP of model_dir
+    // Zip and upload
     const zipPath = '/tmp/model.zip';
     const archive = archiver('zip', { zlib: { level: 9 } });
     const output = fs.createWriteStream(zipPath);
@@ -124,18 +125,16 @@ export async function trainWithTicks(ticks, epochs = 50) {
     await zipComplete;
     console.log(`📦 Zipped model to ${zipPath}`);
 
-    // Upload ZIP with retries
     async function retryUpload(filePath, retries = 3, delay = 2000) {
       for (let i = 0; i < retries; i++) {
         try {
           return await cloudinary.uploader.upload(filePath, {
-  resource_type: 'raw',
-  public_id: publicId,         
-  type: 'upload',          // ⚠️ This ensures it's private. Default is 'upload'
-});
-
+            resource_type: 'raw',
+            public_id: publicId,
+            type: 'upload'
+          });
         } catch (err) {
-          console.warn(`⏳ Upload failed for ${path.basename(filePath)}. Retry ${i + 1}/${retries}`);
+          console.warn(`⏳ Upload failed (${i + 1}/${retries})`);
           if (i === retries - 1) throw err;
           await new Promise(res => setTimeout(res, delay));
         }
@@ -156,8 +155,9 @@ export async function trainWithTicks(ticks, epochs = 50) {
     console.error('💥 Training process failed:', err.message);
   } finally {
     cloudinary.api.resource(publicId, { resource_type: 'raw' })
-  .then(res => console.log('✅ Verification File exists:', res.secure_url))
-  .catch(err => console.error('❌ Verification File not found:', err.message));
+      .then(res => console.log('✅ Verification File exists:', res.secure_url))
+      .catch(err => console.error('❌ Verification File not found:', err.message));
+
     if (dataset) {
       tf.dispose([dataset.xs, dataset.ys]);
       console.log('🧹 Tensors disposed');
@@ -165,7 +165,8 @@ export async function trainWithTicks(ticks, epochs = 50) {
   }
 }
 
-
+ 
+    
 export const loadModelFromCloudinary = (async () => {
   try {
     const modelDir = '/tmp/model_dir';
@@ -244,12 +245,17 @@ export async function predictNext5(ticks) {
   if (ticks.length < 295) throw new Error('📉 Insufficient ticks (min 295)');
 
   return tf.tidy(() => {
-    const input = ticks.slice(-295).map(t => [t.close || t.quote]);
+    const basePrice = ticks[ticks.length - 1].close || ticks[ticks.length - 1].quote;
+    const input = ticks.slice(-295).map(t => [Math.log((t.close || t.quote) / (t.prevClose || t.close || t.quote))]);
     const xs = tf.tensor3d([input], [1, 295, 1]);
-    const prediction = model.predict(xs);
-    return prediction.arraySync()[0];
+
+    const predictedLogReturns = model.predict(xs).arraySync()[0];
+    const predictedPrices = decodeLogReturns(basePrice, predictedLogReturns);
+
+    return predictedPrices;
   });
 }
+
 
 export async function adaptOnFailure(ticks, actualNext5) {
   if (!modelReady) throw new Error('Model not loaded');
@@ -258,14 +264,63 @@ export async function adaptOnFailure(ticks, actualNext5) {
     return;
   }
 
-  const input = ticks.slice(-295).map(t => [t.close || t.quote]);
+  const lastPrice = ticks[ticks.length - 1].close || ticks[ticks.length - 1].quote;
+  if (!lastPrice || lastPrice <= 0) {
+    console.warn('❌ Invalid last price for log return conversion');
+    return;
+  }
+
+  const actualLogReturns = actualNext5.map((p, i) =>
+    i === 0
+      ? Math.log(p / lastPrice)
+      : Math.log(p / actualNext5[i - 1])
+  );
+
+  const input = ticks.slice(-295).map(t => [Math.log((t.close || t.quote) / (t.prevClose || t.close || t.quote))]);
+
   const xs = tf.tensor3d([input], [1, 295, 1]);
-  const ys = tf.tensor2d([actualNext5], [1, 5]);
+  const ys = tf.tensor2d([actualLogReturns], [1, 5]);
 
   await model.fit(xs, ys, { epochs: 5, batchSize: 1 });
   tf.dispose([xs, ys]);
-  console.log('🔁 Retrained on failure data');
+
+  console.log('🔁 Retrained on failure data (converted to log returns)');
 }
+
+
+
+export function tradeAdviceEncoded(predictedLogReturns, actualPrices, entryPrice, currentPositionSize = 1, maxPositionSize = 16) {
+  if (predictedLogReturns.length !== 5 || actualPrices.length !== 5) {
+    console.warn('❌ Invalid prediction or actuals length');
+    return null;
+  }
+
+  const predictedPrices = decodeLogReturns(entryPrice, predictedLogReturns);
+  const avgPrediction = predictedPrices.reduce((a, b) => a + b, 0) / 5;
+  const avgActual = actualPrices.reduce((a, b) => a + b, 0) / 5;
+
+  const direction = avgPrediction > entryPrice ? 'CALL' : 'PUT';
+  const outcome = avgActual > entryPrice ? 'WIN' : 'LOSS';
+  const error = Math.abs(avgPrediction - avgActual);
+
+  let action = 'hold';
+  let newPositionSize = currentPositionSize;
+
+  if (outcome === 'WIN' && currentPositionSize < maxPositionSize) {
+    action = 'add';
+    newPositionSize = Math.min(currentPositionSize * 2, maxPositionSize);
+  } else if (outcome === 'LOSS' && currentPositionSize > 1) {
+    action = 'reduce';
+    newPositionSize = Math.max(1, Math.floor(currentPositionSize / 2));
+  }
+
+  console.log(`📊 Entry: ${entryPrice} | Prediction Avg: ${avgPrediction.toFixed(5)} | Actual Avg: ${avgActual.toFixed(5)}`);
+  console.log(`📈 Direction: ${direction} | Outcome: ${outcome} | Error: ${error.toFixed(5)}`);
+  console.log(`⚙️ Action: ${action} | Position Size: ${newPositionSize}`);
+
+  return { direction, outcome, error: error.toFixed(5), action, newPositionSize };
+}
+
 
 export function tradeAdvice(predicted, actuals, entryPrice, currentPositionSize = 1, maxPositionSize = 16) {
   if (predicted.length !== 5 || actuals.length !== 5) {
