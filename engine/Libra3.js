@@ -36,29 +36,33 @@ function buildModel() {
 }
 
 function extractDataset(ticks) {
-  console.log(`📏 Total ticks: ${ticks.length}`);
-console.log(`🧪 Type of ticks[0]:`, typeof ticks[0]);
-console.log('🧪 Sample ticks:', ticks.slice(0, 10));
   if (!Array.isArray(ticks)) return null;
-  if (ticks.length < 301) return null; // Need at least 296+5 ticks
+  if (ticks.length < 300) return null;
 
   return tf.tidy(() => {
     const inputs = [], labels = [];
 
-    for (let i = 0; i <= ticks.length - 301; i++) {
+    for (let i = 4; i <= ticks.length - 300; i++) {
       let valid = true;
       const input = [], label = [];
 
-      // Input: 295 log returns
-      for (let j = i; j < i + 295; j++) {
+      // First feature: log(curr / SMA5)
+      const smaWindow = ticks.slice(i - 4, i + 1);
+      const sma = smaWindow.reduce((a, b) => a + b, 0) / smaWindow.length;
+      const base = ticks[i];
+      if (!base || !sma || base <= 0 || sma <= 0) continue;
+      input.push([Math.log(base / sma)]); // first log
+
+      // Next 294: regular log returns
+      for (let j = i; j < i + 294; j++) {
         const curr = ticks[j], next = ticks[j + 1];
         if (!curr || !next || curr <= 0 || next <= 0) { valid = false; break; }
         input.push([Math.log(next / curr)]);
       }
 
-      // Label: next 5 log returns
+      // Labels: 5 future log returns
       if (valid) {
-        for (let k = i + 295; k < i + 300; k++) {
+        for (let k = i + 294; k < i + 299; k++) {
           const curr = ticks[k], next = ticks[k + 1];
           if (!curr || !next || curr <= 0 || next <= 0) { valid = false; break; }
           label.push(Math.log(next / curr));
