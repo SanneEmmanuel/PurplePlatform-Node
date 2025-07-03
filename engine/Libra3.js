@@ -263,13 +263,21 @@ export async function uploadModelFromDisk(filepath = './model_dir/model.json') {
 
 export async function predictNext5(ticks) {
   if (!modelReady) throw new Error('Model not loaded');
-  if (ticks.length < 295) throw new Error('📉 Insufficient ticks (min 295)');
+  if (ticks.length < 296) throw new Error('📉 Insufficient ticks (min 296)');
 
   return tf.tidy(() => {
-    const basePrice = ticks[ticks.length - 1].close || ticks[ticks.length - 1].quote;
-    const input = ticks.slice(-295).map(t => [Math.log((t.close || t.quote) / (t.prevClose || t.close || t.quote))]);
-    const xs = tf.tensor3d([input], [1, 295, 1]);
+    const basePrice = ticks[ticks.length - 1];
+    const input = [];
 
+    for (let i = ticks.length - 296; i < ticks.length; i++) {
+      const curr = ticks[i], next = ticks[i + 1];
+      if (!curr || !next || curr <= 0 || next <= 0) {
+        throw new Error('❌ Invalid tick in prediction input');
+      }
+      input.push([Math.log(next / curr)]);
+    }
+
+    const xs = tf.tensor3d([input], [1, 295, 1]);
     const predictedLogReturns = model.predict(xs).arraySync()[0];
     const predictedPrices = decodeLogReturns(basePrice, predictedLogReturns);
 
@@ -278,26 +286,33 @@ export async function predictNext5(ticks) {
 }
 
 
+
 export async function adaptOnFailure(ticks, actualNext5) {
   if (!modelReady) throw new Error('Model not loaded');
-  if (ticks.length < 295 || actualNext5.length !== 5) {
+  if (ticks.length < 296 || actualNext5.length !== 5) {
     console.warn('❌ Invalid adaptation data');
     return;
   }
 
-  const lastPrice = ticks[ticks.length - 1].close || ticks[ticks.length - 1].quote;
+  const lastPrice = ticks[ticks.length - 1];
   if (!lastPrice || lastPrice <= 0) {
     console.warn('❌ Invalid last price for log return conversion');
     return;
   }
 
   const actualLogReturns = actualNext5.map((p, i) =>
-    i === 0
-      ? Math.log(p / lastPrice)
-      : Math.log(p / actualNext5[i - 1])
+    i === 0 ? Math.log(p / lastPrice) : Math.log(p / actualNext5[i - 1])
   );
 
-  const input = ticks.slice(-295).map(t => [Math.log((t.close || t.quote) / (t.prevClose || t.close || t.quote))]);
+  const input = [];
+  for (let i = ticks.length - 296; i < ticks.length; i++) {
+    const curr = ticks[i], next = ticks[i + 1];
+    if (!curr || !next || curr <= 0 || next <= 0) {
+      console.warn('❌ Skipped invalid adaptation input');
+      return;
+    }
+    input.push([Math.log(next / curr)]);
+  }
 
   const xs = tf.tensor3d([input], [1, 295, 1]);
   const ys = tf.tensor2d([actualLogReturns], [1, 5]);
