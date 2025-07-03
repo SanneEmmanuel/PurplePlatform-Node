@@ -148,8 +148,13 @@ export const loadModelFromCloudinary = (async () => {
   try {
     const modelDir = '/tmp/model_dir';
     const zipPath = '/tmp/downloaded_model.zip';
-    const zipUrl = 'https://res.cloudinary.com/dj4bwntzb/raw/upload/v1751544235/libra_model_zip.zip';
-
+    const expiresAt = Math.floor(Date.now() / 1000) + 300; // 5 minutes from now
+    const zipUrl = cloudinary.utils.private_download_url(publicId, 'raw', {
+      type: 'authenticated',
+      attachment: true,
+      expires_at: expiresAt
+    });
+    
     fs.mkdirSync('/tmp', { recursive: true });
     console.log('📥 Downloading model ZIP from Cloudinary...');
     const res = await fetch(zipUrl);
