@@ -111,8 +111,8 @@ export async function trainWithTicks(ticks, epochs = 50) {
   public_id: publicId,
   use_filename: true,
   unique_filename: false,
-  overwrite: true,         // Optional: replace if it exists
-  type: 'upload',          // ⚠️ This ensures it's public. Default is 'upload'
+  overwrite: true,         
+  type: 'authenticated',          // ⚠️ This ensures it's private. Default is 'upload'
 });
 
         } catch (err) {
