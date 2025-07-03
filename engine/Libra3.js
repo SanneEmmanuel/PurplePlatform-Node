@@ -37,30 +37,27 @@ function buildModel() {
 
 function extractDataset(ticks) {
   if (!Array.isArray(ticks)) return null;
-  if (ticks.length < 300) return null;
+  if (ticks.length < 301) return null; // Need at least 296+5 ticks
 
   return tf.tidy(() => {
     const inputs = [], labels = [];
-    const getPrice = t => typeof t === 'number' ? t : (t?.close ?? t?.quote);
-    
-    for (let i = 0; i <= ticks.length - 300; i++) {
-      const input = [], label = [];
-      let valid = true;
 
-      // Process input window (295 ticks)
+    for (let i = 0; i <= ticks.length - 301; i++) {
+      let valid = true;
+      const input = [], label = [];
+
+      // Input: 295 log returns
       for (let j = i; j < i + 295; j++) {
-        const curr = getPrice(ticks[j]);
-        const next = getPrice(ticks[j + 1]);
-        if (!curr || !next || curr <= 0) { valid = false; break; }
+        const curr = ticks[j], next = ticks[j + 1];
+        if (!curr || !next || curr <= 0 || next <= 0) { valid = false; break; }
         input.push([Math.log(next / curr)]);
       }
 
-      // Process labels (next 5 ticks)
+      // Label: next 5 log returns
       if (valid) {
         for (let k = i + 295; k < i + 300; k++) {
-          const curr = getPrice(ticks[k]);
-          const next = getPrice(ticks[k + 1]);
-          if (!curr || !next || curr <= 0) { valid = false; break; }
+          const curr = ticks[k], next = ticks[k + 1];
+          if (!curr || !next || curr <= 0 || next <= 0) { valid = false; break; }
           label.push(Math.log(next / curr));
         }
       }
@@ -70,10 +67,10 @@ function extractDataset(ticks) {
         labels.push(label);
       }
     }
-    if(inputs.length===0){
-const badTick = ticks.find(t => !getPrice(t) || getPrice(t) <= 0);
-console.warn('⚠️ Example bad tick object:', badTick);
-console.warn('⚠️ Extracted price:', getPrice(badTick));
+
+    if (inputs.length === 0) {
+      const badTick = ticks.find(t => typeof t !== 'number' || t <= 0);
+      console.warn('⚠️ Example bad tick value:', badTick);
     }
 
     return inputs.length ? {
@@ -82,8 +79,7 @@ console.warn('⚠️ Extracted price:', getPrice(badTick));
     } : null;
   });
 }
-   
-          
+
 
 
 function decodeLogReturns(base, encodedReturns) {
