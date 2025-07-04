@@ -45,70 +45,43 @@ m.compile({optimizer:opt,loss:'meanSquaredError',metrics:['mae']});
 }
 
 function extractDataset(ticks) {
-  if (!Array.isArray(ticks)) return null;
-  if (ticks.length < 300) return null;
+  if (!Array.isArray(ticks) || ticks.length < 300) return null;
 
   return tf.tidy(() => {
     const inputs = [], labels = [];
+    const WINDOW = 295, STEPS = 5;
 
-    const i = 4; // 💡 Force exact one sample for debugging
-
-    let valid = true;
-    const input = [], label = [];
-
-    // 1. SMA log return
-    const slice = ticks.slice(i - 4, i + 1);
-    if (slice.length !== 5 || slice.some(v => typeof v !== 'number' || v <= 0)) {
-      console.warn('⚠️ Bad SMA window:', slice);
-      return null;
-    }
-    const sma = slice.reduce((a, b) => a + b, 0) / 5;
-    const base = ticks[i];
-    input.push([Math.log(base / sma)]);
-
-    // 2. Input log returns
-    for (let j = i; j < i + 294; j++) {
-      const curr = ticks[j], next = ticks[j + 1];
-      if (typeof curr !== 'number' || typeof next !== 'number' || curr <= 0 || next <= 0) {
-        valid = false;
-        console.warn(`⚠️ Bad input ticks at j=${j}: curr=${curr}, next=${next}`);
-        break;
-      }
-      input.push([Math.log(next / curr)]);
-    }
-
-    // 3. Label log returns
-    if (valid) {
-      for (let k = i + 294; k < i + 299; k++) {
-        const curr = ticks[k], next = ticks[k + 1];
-        if (typeof curr !== 'number' || typeof next !== 'number' || curr <= 0 || next <= 0) {
-          valid = false;
-          console.warn(`⚠️ Bad label ticks at k=${k}: curr=${curr}, next=${next}`);
-          break;
+    for (let i = 0; i <= ticks.length - WINDOW - STEPS; i++) {
+      try {
+        // Input features (SMA + 294 log returns)
+        const input = [
+          [Math.log(ticks[i+4]/(ticks.slice(i,i+5).reduce((a,b)=>a+b,0)/5))]
+        ];
+        
+        // Add 294 log returns
+        for (let j = i+4; j < i+4+WINDOW-1; j++) {
+          input.push([Math.log(ticks[j+1]/ticks[j])]);
         }
-        label.push(Math.log(next / curr));
+
+        // Labels (5 log returns)
+        const label = [];
+        for (let k = i+4+WINDOW-1; k < i+4+WINDOW-1+STEPS; k++) {
+          label.push(Math.log(ticks[k+1]/ticks[k]));
+        }
+
+        inputs.push(input);
+        labels.push(label);
+      } catch {
+        continue; // Skip invalid windows
       }
-    }
-
-    if (valid && input.length === 295 && label.length === 5) {
-      inputs.push(input);
-      labels.push(label);
-      console.log('✅ Sample built successfully');
-    }
-
-    if (inputs.length === 0) {
-      const badTick = ticks.find(t => typeof t !== 'number' || t <= 0);
-      console.warn('⚠️ Example bad tick value:', badTick);
     }
 
     return inputs.length ? {
-      xs: tf.tensor3d(inputs, [inputs.length, 295, 1]),
-      ys: tf.tensor2d(labels, [labels.length, 5])
+      xs: tf.tensor3d(inputs, [inputs.length, WINDOW, 1]),
+      ys: tf.tensor2d(labels, [labels.length, STEPS])
     } : null;
   });
 }
-
-
 
 function decodeLogReturns(base, encodedReturns) {
   return encodedReturns.reduce((arr, logChange) => {
