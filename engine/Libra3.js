@@ -25,54 +25,56 @@ let modelReady = false;
 function buildModel() {
   const m = tf.sequential();
   m.add(tf.layers.inputLayer({ inputShape: [295, 1] }));
-  m.add(tf.layers.lstm({ units: 128, returnSequences: true }));
-  m.add(tf.layers.dropout({ rate: 0.2 }));
-  m.add(tf.layers.lstm({ units: 64, returnSequences: false }));
-  m.add(tf.layers.dropout({ rate: 0.2 }));
-  m.add(tf.layers.dense({ units: 32, activation: 'relu' }));
-  m.add(tf.layers.dense({ units: 5 }));
-  m.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
-  return m;
-}
-
 function extractDataset(ticks) {
   if (!Array.isArray(ticks)) return null;
   if (ticks.length < 300) return null;
 
   return tf.tidy(() => {
     const inputs = [], labels = [];
-    const maxStart = ticks.length - 299 + 4; // so i + 299 ≤ ticks.length - 1
 
-    for (let i = 4; i < maxStart; i++) {
-      let valid = true;
-      const input = [], label = [];
+    const i = 4; // 💡 Force exact one sample for debugging
 
-      // ⛳ 1. SMA-based derivative
-      const sma = ticks.slice(i - 4, i + 1).reduce((a, b) => a + b, 0) / 5;
-      const base = ticks[i];
-      if (!base || !sma || base <= 0 || sma <= 0) continue;
-      input.push([Math.log(base / sma)]);
+    let valid = true;
+    const input = [], label = [];
 
-      // ⛳ 2. Input sequence: log returns from tick[i] to tick[i + 294]
-      for (let j = i; j < i + 294; j++) {
-        const curr = ticks[j], next = ticks[j + 1];
-        if (!curr || !next || curr <= 0 || next <= 0) { valid = false; break; }
-        input.push([Math.log(next / curr)]);
+    // 1. SMA log return
+    const slice = ticks.slice(i - 4, i + 1);
+    if (slice.length !== 5 || slice.some(v => typeof v !== 'number' || v <= 0)) {
+      console.warn('⚠️ Bad SMA window:', slice);
+      return null;
+    }
+    const sma = slice.reduce((a, b) => a + b, 0) / 5;
+    const base = ticks[i];
+    input.push([Math.log(base / sma)]);
+
+    // 2. Input log returns
+    for (let j = i; j < i + 294; j++) {
+      const curr = ticks[j], next = ticks[j + 1];
+      if (typeof curr !== 'number' || typeof next !== 'number' || curr <= 0 || next <= 0) {
+        valid = false;
+        console.warn(`⚠️ Bad input ticks at j=${j}: curr=${curr}, next=${next}`);
+        break;
       }
+      input.push([Math.log(next / curr)]);
+    }
 
-      // ⛳ 3. Output sequence: log returns from tick[i+294] to tick[i+299]
-      if (valid) {
-        for (let k = i + 294; k < i + 299; k++) {
-          const curr = ticks[k], next = ticks[k + 1];
-          if (!curr || !next || curr <= 0 || next <= 0) { valid = false; break; }
-          label.push(Math.log(next / curr));
+    // 3. Label log returns
+    if (valid) {
+      for (let k = i + 294; k < i + 299; k++) {
+        const curr = ticks[k], next = ticks[k + 1];
+        if (typeof curr !== 'number' || typeof next !== 'number' || curr <= 0 || next <= 0) {
+          valid = false;
+          console.warn(`⚠️ Bad label ticks at k=${k}: curr=${curr}, next=${next}`);
+          break;
         }
+        label.push(Math.log(next / curr));
       }
+    }
 
-      if (valid && input.length === 295 && label.length === 5) {
-        inputs.push(input);
-        labels.push(label);
-      }
+    if (valid && input.length === 295 && label.length === 5) {
+      inputs.push(input);
+      labels.push(label);
+      console.log('✅ Sample built successfully');
     }
 
     if (inputs.length === 0) {
@@ -86,7 +88,6 @@ function extractDataset(ticks) {
     } : null;
   });
 }
-
 
 
 
