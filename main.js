@@ -184,7 +184,7 @@ app.get('/chart-data', async (_, res) => res.json(await getTicksForTraining(300)
 app.post('/train', async (_, res) => {
   console.log('🧠 Initiating manual training: node HistoryTrain.js 100 100');
 
-  exec('node HistoryTrain.js 100 100', { cwd: __dirname }, (err, stdout, stderr) => {
+  exec('node HistoryTrain.js 1000 100', { cwd: __dirname }, (err, stdout, stderr) => {
     if (err) {
       console.error('❌ Training failed:', stderr || err.message);
       return res.status(500).json({ error: 'Training failed', details: stderr || err.message });
