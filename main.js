@@ -181,17 +181,29 @@ app.get('/chart-live', async (_, res) => res.json(await getAccountStatus()));
 app.get('/chart-data', async (_, res) => res.json(await getTicksForTraining(300)));
 //AI training
 // Training Trigger
+import { spawn } from 'child_process';
+
 app.post('/train', async (_, res) => {
-  console.log('🧠 Initiating manual training: node HistoryTrain.js 100 100');
+  console.log('🧠 Initiating manual training: node HistoryTrain.js 1000 100');
 
-  exec('node HistoryTrain.js 1000 100', { cwd: __dirname }, (err, stdout, stderr) => {
-    if (err) {
-      console.error('❌ Training failed:', stderr || err.message);
-      return res.status(500).json({ error: 'Training failed', details: stderr || err.message });
-    }
+  const train = spawn('node', ['HistoryTrain.js', '100', '100'], { cwd: __dirname });
 
-    console.log('✅ Training complete:\n', stdout);
-    res.json({ status: 'training_complete', output: stdout });
+  train.stdout.on('data', (data) => {
+    console.log(`[🧠 TRAIN STDOUT] ${data.toString().trim()}`);
+  });
+
+  train.stderr.on('data', (data) => {
+    console.error(`[❌ TRAIN STDERR] ${data.toString().trim()}`);
+  });
+
+  train.on('close', (code) => {
+    console.log(`✅ HistoryTrain.js exited with code ${code}`);
+    res.json({ status: 'training_complete', exitCode: code });
+  });
+
+  train.on('error', (err) => {
+    console.error('❌ Failed to start training script:', err.message);
+    res.status(500).json({ error: 'Failed to start training script', message: err.message });
   });
 });
 
