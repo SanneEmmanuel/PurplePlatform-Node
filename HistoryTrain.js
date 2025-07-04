@@ -23,7 +23,7 @@ async function getTicksWithRetry(totalTicks) {
 }
 
 async function train(batchCount = 1, epochs = 100) {
-  const totalTicks = batchCount * 300;
+  const totalTicks = batchCount * 304;
   console.log('Preparing Deriv...');
   console.log(`🎯 Fetching ${totalTicks} ticks...`);
   const ticks = await getTicksWithRetry(totalTicks);
