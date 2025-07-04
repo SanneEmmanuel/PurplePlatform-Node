@@ -216,6 +216,9 @@ export const loadModelFromCloudinary = (async () => {
     console.log(`🗂️ ZIP extracted to ${modelDir}`);
 
     model = await tf.loadLayersModel(`file://${path.resolve(modelDir)}/model.json`);
+    const opt=tf.train.adam(0.001);
+    model.compile({optimizer:opt,loss:'meanSquaredError',metrics:['mae']});
+    
     modelReady = true;
     console.log('✅ Model and weights loaded from Cloudinary');
   } catch (err) {
