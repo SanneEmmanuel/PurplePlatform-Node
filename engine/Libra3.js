@@ -14,7 +14,7 @@ cloudinary.config({
   api_key: '354656419316393', 
   api_secret: 'M-Trl9ltKDHyo1dIP2AaLOG-WPM' 
 });
-const publicId = 'libra_v3.zip'; 
+const publicId = 'libra_v4.zip'; 
 if (!cloudinary.config().cloud_name || !cloudinary.config().api_key) {
   console.warn('❌ Cloudinary config invalid — Uploads may fail');
 }
@@ -24,23 +24,14 @@ let modelReady = false;
 
 function buildModel() {
     const m = tf.sequential();
-    m.add(tf.layers.inputLayer({ inputShape: [295, 1] }));
-    m.add(tf.layers.lstm({ units: 256,returnSequences: true, kernelRegularizer: tf.regularizers.l2({ l2: 0.01 })  }));
-    m.add(tf.layers.dropout({ rate: 0.3 }));
-    m.add(tf.layers.batchNormalization())
- m.add(tf.layers.lstm({units:128,returnSequences:true,kernelRegularizer:tf.regularizers.l2({l2:0.01})}));
-m.add(tf.layers.dropout({rate:0.3}));
-m.add(tf.layers.batchNormalization());
-m.add(tf.layers.lstm({units:64,returnSequences:false}));
-m.add(tf.layers.dropout({rate:0.2}));
-m.add(tf.layers.batchNormalization());
-m.add(tf.layers.dense({units:64,activation:'relu',kernelRegularizer:tf.regularizers.l2({l2:0.01})}));
-m.add(tf.layers.dropout({rate:0.2}));
-m.add(tf.layers.dense({units:32,activation:'relu'}));
-m.add(tf.layers.dense({units:5}));
-const opt=tf.train.adam(0.001);
-m.compile({optimizer:opt,loss:'meanSquaredError',metrics:['mae']});
-    
+m.add(tf.layers.lstm({ units: 64, inputShape: [295, 1], returnSequences: true }));
+m.add(tf.layers.dropout({ rate: 0.2 }));
+m.add(tf.layers.lstm({ units: 32 }));
+m.add(tf.layers.dense({ units: 5 }));
+
+const opt = tf.train.adam(0.001, 0.9, 0.999, 1e-8, { clipNorm: 5 });
+m.compile({ optimizer: opt, loss: 'meanSquaredError', metrics: ['mae'] });
+   
     return m;
 }
 
@@ -244,9 +235,8 @@ export const loadModelFromCloudinary = (async () => {
     console.log(`🗂️ ZIP extracted to ${modelDir}`);
 
     model = await tf.loadLayersModel(`file://${path.resolve(modelDir)}/model.json`);
-    const opt=tf.train.adam(0.001);
-    model.compile({optimizer:opt,loss:'meanSquaredError',metrics:['mae']});
-    
+    m.compile({ optimizer: opt, loss: 'meanSquaredError', metrics: ['mae'] });
+   
     modelReady = true;
     console.log('✅ Model and weights loaded from Cloudinary');
   } catch (err) {
