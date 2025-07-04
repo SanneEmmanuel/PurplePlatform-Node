@@ -7,6 +7,7 @@ import path from 'path';
 import fetch from 'node-fetch';
 import { v2 as cloudinary } from 'cloudinary';
 import archiver from 'archiver';
+import unzipper from 'unzipper'; // Fixed: Added import
 
 // ⚠️ WARNING: Fake Demo Api Keys – Replace with real keys before deploying
 cloudinary.config({ 
@@ -22,17 +23,22 @@ if (!cloudinary.config().cloud_name || !cloudinary.config().api_key) {
 let model;
 let modelReady = false;
 
-function buildModel() {
-    const m = tf.sequential();
-m.add(tf.layers.lstm({ units: 64, inputShape: [295, 1], returnSequences: true }));
-m.add(tf.layers.dropout({ rate: 0.2 }));
-m.add(tf.layers.lstm({ units: 32 }));
-m.add(tf.layers.dense({ units: 5 }));
+// Fixed: Moved optimizer outside so it can be reused
+function getOptimizer() {
+  return tf.train.adam(0.001, 0.9, 0.999, 1e-8, { clipNorm: 5 });
+}
 
-const opt = tf.train.adam(0.001, 0.9, 0.999, 1e-8, { clipNorm: 5 });
-m.compile({ optimizer: opt, loss: 'meanSquaredError', metrics: ['mae'] });
-   
-    return m;
+function buildModel() {
+  const m = tf.sequential();
+  m.add(tf.layers.lstm({ units: 64, inputShape: [295, 1], returnSequences: true }));
+  m.add(tf.layers.dropout({ rate: 0.2 }));
+  m.add(tf.layers.lstm({ units: 32 }));
+  m.add(tf.layers.dense({ units: 5 }));
+
+  const opt = getOptimizer(); // Fixed: Use common optimizer function
+  m.compile({ optimizer: opt, loss: 'meanSquaredError', metrics: ['mae'] });
+  
+  return m;
 }
 
 function extractDataset(ticks) {
@@ -67,6 +73,8 @@ function extractDataset(ticks) {
         
         // 2. Add remaining 294 log returns
         for (let j = i + 4; j < i + 4 + WINDOW - 1; j++) {
+          // Fixed: Added bounds check
+          if (j + 1 >= ticks.length) break;
           input.push([safeLogReturn(ticks[j], ticks[j + 1])]);
         }
 
@@ -74,6 +82,8 @@ function extractDataset(ticks) {
         const label = [];
         const labelStart = i + WINDOW + 3; // i+4 + (WINDOW-1)
         for (let k = labelStart; k < labelStart + STEPS; k++) {
+          // Fixed: Added bounds check
+          if (k + 1 >= ticks.length) break;
           label.push(safeLogReturn(ticks[k], ticks[k + 1]));
         }
 
@@ -113,13 +123,14 @@ export async function trainWithTicks(ticks, epochs = 50) {
   console.log('✊ First Tick:', ticks[0]);
   let dataset;
 
-  try {console.log
-    dataset = extractDataset(ticks); // Converts prices to log returns for training
+  try {
+    // Fixed: Removed stray console.log
+    dataset = extractDataset(ticks);
     if (!dataset || dataset.xs.shape[0] === 0) {
-  console.warn('❌ No valid dataset extracted from ticks.');
-  return;
-}
-console.log(`📊 Dataset ready: ${dataset.xs.shape[0]} samples`);
+      console.warn('❌ No valid dataset extracted from ticks.');
+      return;
+    }
+    console.log(`📊 Dataset ready: ${dataset.xs.shape[0]} samples`);
 
     console.log('✅ Dataset extracted');
 
@@ -143,11 +154,14 @@ console.log(`📊 Dataset ready: ${dataset.xs.shape[0]} samples`);
     console.log('✅ Training complete');
 
     const saveDir = '/tmp/model_dir';
-    fs.existsSync(saveDir) || (fs.mkdirSync(saveDir, { recursive: true }) && console.log(`📁 Created: ${saveDir}`));
+    if (!fs.existsSync(saveDir)) {
+      fs.mkdirSync(saveDir, { recursive: true });
+      console.log(`📁 Created: ${saveDir}`);
+    }
     await model.save(`file://${saveDir}`);
     console.log(`✅ Model saved to ${saveDir}`);
 
-    const fsPromises = await import('fs/promises');
+    const fsPromises = fs.promises || (await import('fs/promises')).default;
     const files = await fsPromises.readdir(saveDir);
     console.log('📃 model_dir contains:', files);
     if (!files.includes('model.json')) console.warn('⚠️ model.json not found after save');
@@ -172,7 +186,8 @@ console.log(`📊 Dataset ready: ${dataset.xs.shape[0]} samples`);
           return await cloudinary.uploader.upload(filePath, {
             resource_type: 'raw',
             public_id: publicId,
-            type: 'upload'
+            type: 'upload',
+            overwrite: true // Fixed: Add overwrite option
           });
         } catch (err) {
           console.warn(`⏳ Upload failed (${i + 1}/${retries})`);
@@ -206,8 +221,6 @@ console.log(`📊 Dataset ready: ${dataset.xs.shape[0]} samples`);
   }
 }
 
- 
-    
 export const loadModelFromCloudinary = (async () => {
   try {
     const modelDir = '/tmp/model_dir';
@@ -220,22 +233,45 @@ export const loadModelFromCloudinary = (async () => {
       expires_at: Math.floor(Date.now() / 1000) + 600 // 10 minutes
     });
     
-    fs.mkdirSync('/tmp', { recursive: true });
+    if (!fs.existsSync('/tmp')) {
+      fs.mkdirSync('/tmp', { recursive: true });
+    }
     console.log('📥 Downloading model ZIP from Cloudinary...');
-    //Download and retry
-    const res = await (async (u,r=3,d=1000)=>{while(r--){const x=await fetch(u).catch(()=>({}));if(x.ok)return x;
-     console.error(`🚫 ZIP download failed${r?' (retrying...)':''}:`,x.statusText||'Network error');
-     if(r)await new Promise(y=>setTimeout(y,d))}})(zipUrl);
+    
+    // Fixed: Proper retry logic
+    let res;
+    for (let i = 0; i < 3; i++) {
+      try {
+        res = await fetch(zipUrl);
+        if (res.ok) break;
+      } catch (err) {
+        console.error(`🚫 ZIP download failed${i < 2 ? ' (retrying...)' : ''}:`, err.message);
+        if (i === 2) throw err;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
 
-    fs.writeFileSync(zipPath, await res.buffer());
+    if (!res.ok) {
+      throw new Error(`Failed to download ZIP: ${res.statusText}`);
+    }
+
+    const buffer = await res.buffer();
+    fs.writeFileSync(zipPath, buffer);
     console.log(`📦 ZIP saved to ${zipPath}`);
 
-    const unzipper = await import('unzipper');
-    await fs.createReadStream(zipPath).pipe(unzipper.Extract({ path: modelDir })).promise();
+    // Fixed: Use imported unzipper
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(zipPath)
+        .pipe(unzipper.Extract({ path: modelDir }))
+        .on('close', resolve)
+        .on('error', reject);
+    });
     console.log(`🗂️ ZIP extracted to ${modelDir}`);
 
-    model = await tf.loadLayersModel(`file://${path.resolve(modelDir)}/model.json`);
-    m.compile({ optimizer: opt, loss: 'meanSquaredError', metrics: ['mae'] });
+    // Fixed: Use the common optimizer function
+    model = await tf.loadLayersModel(`file://${path.join(modelDir, 'model.json')}`);
+    const opt = getOptimizer();
+    model.compile({ optimizer: opt, loss: 'meanSquaredError', metrics: ['mae'] });
    
     modelReady = true;
     console.log('✅ Model and weights loaded from Cloudinary');
@@ -243,7 +279,6 @@ export const loadModelFromCloudinary = (async () => {
     console.error('❌ Failed to load model from Cloudinary:', err.message);    
   }
 })();
-
 
 export function isModelReady() {
   return modelReady;
@@ -261,7 +296,7 @@ export async function downloadCurrentModel(destination = './downloaded_model.zip
 
     archive.on('error', err => reject(err));
     archive.pipe(output);
-    archive.directory('./tmp/model_dir/', false);
+    archive.directory('/tmp/model_dir/', false); // Fixed: Use absolute path
     archive.finalize();
   });
 }
@@ -275,7 +310,8 @@ export async function uploadModelFromDisk(filepath = './model_dir/model.json') {
   try {
     const res = await cloudinary.uploader.upload(filepath, {
       resource_type: 'raw',
-      public_id: publicId
+      public_id: publicId,
+      overwrite: true // Fixed: Add overwrite option
     });
     console.log('☁️ Manual upload complete:', res.secure_url);
   } catch (err) {
@@ -291,7 +327,8 @@ export async function predictNext5(ticks) {
     const basePrice = ticks[ticks.length - 1];
     const input = [];
 
-    for (let i = ticks.length - 296; i < ticks.length; i++) {
+    // Fixed: Loop bounds to prevent out-of-range access
+    for (let i = ticks.length - 296; i < ticks.length - 1; i++) {
       const curr = ticks[i], next = ticks[i + 1];
       if (!curr || !next || curr <= 0 || next <= 0) {
         throw new Error('❌ Invalid tick in prediction input');
@@ -306,8 +343,6 @@ export async function predictNext5(ticks) {
     return predictedPrices;
   });
 }
-
-
 
 export async function adaptOnFailure(ticks, actualNext5) {
   if (!modelReady) throw new Error('Model not loaded');
@@ -327,7 +362,8 @@ export async function adaptOnFailure(ticks, actualNext5) {
   );
 
   const input = [];
-  for (let i = ticks.length - 296; i < ticks.length; i++) {
+  // Fixed: Loop bounds to prevent out-of-range access
+  for (let i = ticks.length - 296; i < ticks.length - 1; i++) {
     const curr = ticks[i], next = ticks[i + 1];
     if (!curr || !next || curr <= 0 || next <= 0) {
       console.warn('❌ Skipped invalid adaptation input');
@@ -344,8 +380,6 @@ export async function adaptOnFailure(ticks, actualNext5) {
 
   console.log('🔁 Retrained on failure data (converted to log returns)');
 }
-
-
 
 export function tradeAdviceEncoded(predictedLogReturns, actualPrices, entryPrice, currentPositionSize = 1, maxPositionSize = 16) {
   if (predictedLogReturns.length !== 5 || actualPrices.length !== 5) {
@@ -378,7 +412,6 @@ export function tradeAdviceEncoded(predictedLogReturns, actualPrices, entryPrice
 
   return { direction, outcome, error: error.toFixed(5), action, newPositionSize };
 }
-
 
 export function tradeAdvice(predicted, actuals, entryPrice, currentPositionSize = 1, maxPositionSize = 16) {
   if (predicted.length !== 5 || actuals.length !== 5) {
