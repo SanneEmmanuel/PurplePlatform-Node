@@ -103,7 +103,7 @@ const tradingCycle = async () => {
       return;
     }
 
-    const prices = await getTicksForTraining(300); // Get full 300 ticks
+    const prices = await getTicksForTraining(304); // Get full 300 ticks
     const prediction = await runPrediction(prices);
 
     if (!prediction?.predicted || !prediction?.actuals) {
