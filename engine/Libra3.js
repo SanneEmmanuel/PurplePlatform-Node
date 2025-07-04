@@ -23,17 +23,26 @@ let model;
 let modelReady = false;
 
 function buildModel() {
-  const m = tf.sequential();
-  m.add(tf.layers.inputLayer({ inputShape: [295, 1] }));
-  m.add(tf.layers.lstm({ units: 128, returnSequences: true }));
-  m.add(tf.layers.dropout({ rate: 0.2 }));
-  m.add(tf.layers.lstm({ units: 64, returnSequences: false }));
-  m.add(tf.layers.dropout({ rate: 0.2 }));
-  m.add(tf.layers.dense({ units: 32, activation: 'relu' }));
-  m.add(tf.layers.dense({ units: 5 }));
-  m.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
-  return m;
-} 
+    const m = tf.sequential();
+    m.add(tf.layers.inputLayer({ inputShape: [295, 1] }));
+    m.add(tf.layers.lstm({ units: 256,returnSequences: true, kernelRegularizer: tf.regularizers.l2({ l2: 0.01 })  }));
+    m.add(tf.layers.dropout({ rate: 0.3 }));
+    m.add(tf.layers.batchNormalization())
+ m.add(tf.layers.lstm({units:128,returnSequences:true,kernelRegularizer:tf.regularizers.l2({l2:0.01})}));
+m.add(tf.layers.dropout({rate:0.3}));
+m.add(tf.layers.batchNormalization());
+m.add(tf.layers.lstm({units:64,returnSequences:false}));
+m.add(tf.layers.dropout({rate:0.2}));
+m.add(tf.layers.batchNormalization());
+m.add(tf.layers.dense({units:64,activation:'relu',kernelRegularizer:tf.regularizers.l2({l2:0.01})}));
+m.add(tf.layers.dropout({rate:0.2}));
+m.add(tf.layers.dense({units:32,activation:'relu'}));
+m.add(tf.layers.dense({units:5}));
+const opt=tf.train.adam(0.001);
+m.compile({optimizer:opt,loss:'meanSquaredError',metrics:['mae']});
+    
+    return m;
+}
 
 function extractDataset(ticks) {
   if (!Array.isArray(ticks)) return null;
