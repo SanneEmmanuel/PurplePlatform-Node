@@ -25,6 +25,16 @@ let modelReady = false;
 function buildModel() {
   const m = tf.sequential();
   m.add(tf.layers.inputLayer({ inputShape: [295, 1] }));
+  m.add(tf.layers.lstm({ units: 128, returnSequences: true }));
+  m.add(tf.layers.dropout({ rate: 0.2 }));
+  m.add(tf.layers.lstm({ units: 64, returnSequences: false }));
+  m.add(tf.layers.dropout({ rate: 0.2 }));
+  m.add(tf.layers.dense({ units: 32, activation: 'relu' }));
+  m.add(tf.layers.dense({ units: 5 }));
+  m.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+  return m;
+} 
+
 function extractDataset(ticks) {
   if (!Array.isArray(ticks)) return null;
   if (ticks.length < 300) return null;
