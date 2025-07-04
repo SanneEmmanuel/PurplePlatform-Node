@@ -45,41 +45,69 @@ m.compile({optimizer:opt,loss:'meanSquaredError',metrics:['mae']});
 }
 
 function extractDataset(ticks) {
-  if (!Array.isArray(ticks) || ticks.length < 300) return null;
+  if (!Array.isArray(ticks) || ticks.length < 304) { // Minimum 295 + 5 + 4
+    console.warn(`❌ Insufficient ticks (${ticks.length}). Need at least 304.`);
+    return null;
+  }
 
   return tf.tidy(() => {
     const inputs = [], labels = [];
     const WINDOW = 295, STEPS = 5;
 
-    for (let i = 0; i <= ticks.length - WINDOW - STEPS; i++) {
+    // Pre-validate all ticks
+    const invalidTicks = ticks.some(t => t <= 0 || !Number.isFinite(t));
+    if (invalidTicks) {
+      console.warn('❌ Dataset contains invalid ticks (zero, negative, or NaN)');
+      return null;
+    }
+
+    // Safe log-return calculation with clipping
+    const safeLogReturn = (a, b) => {
+      const ratio = b / a;
+      return Math.log(Math.max(1e-7, Math.min(ratio, 1e7)));
+    };
+
+    for (let i = 0; i <= ticks.length - WINDOW - STEPS - 4; i++) {
       try {
-        // Input features (SMA + 294 log returns)
-        const input = [
-          [Math.log(ticks[i+4]/(ticks.slice(i,i+5).reduce((a,b)=>a+b,0)/5))]
-        ];
+        // 1. Calculate SMA for first feature
+        const smaWindow = ticks.slice(i, i + 5);
+        const sma = smaWindow.reduce((a, b) => a + b, 0) / 5;
+        const input = [[safeLogReturn(sma, ticks[i + 4])]];
         
-        // Add 294 log returns
-        for (let j = i+4; j < i+4+WINDOW-1; j++) {
-          input.push([Math.log(ticks[j+1]/ticks[j])]);
+        // 2. Add remaining 294 log returns
+        for (let j = i + 4; j < i + 4 + WINDOW - 1; j++) {
+          input.push([safeLogReturn(ticks[j], ticks[j + 1])]);
         }
 
-        // Labels (5 log returns)
+        // 3. Calculate labels (5-step log returns)
         const label = [];
-        for (let k = i+4+WINDOW-1; k < i+4+WINDOW-1+STEPS; k++) {
-          label.push(Math.log(ticks[k+1]/ticks[k]));
+        const labelStart = i + WINDOW + 3; // i+4 + (WINDOW-1)
+        for (let k = labelStart; k < labelStart + STEPS; k++) {
+          label.push(safeLogReturn(ticks[k], ticks[k + 1]));
         }
 
-        inputs.push(input);
-        labels.push(label);
-      } catch {
-        continue; // Skip invalid windows
+        // Verify no NaN/Infinity in the window
+        const hasInvalid = [...input.flat(), ...label].some(v => !Number.isFinite(v));
+        if (!hasInvalid) {
+          inputs.push(input);
+          labels.push(label);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Skipped window at i=${i}:`, err.message);
+        continue;
       }
     }
 
-    return inputs.length ? {
+    if (inputs.length === 0) {
+      console.warn('❌ No valid windows extracted');
+      return null;
+    }
+
+    console.log(`✅ Extracted ${inputs.length} valid samples`);
+    return {
       xs: tf.tensor3d(inputs, [inputs.length, WINDOW, 1]),
       ys: tf.tensor2d(labels, [labels.length, STEPS])
-    } : null;
+    };
   });
 }
 
