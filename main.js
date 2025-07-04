@@ -28,7 +28,7 @@ const {
   getAccountBalance, getAccountInfo, reconnectWithNewSymbol, getAvailableSymbols,
   closedContracts, getAvailableContracts 
 } = deriv;
-const { runPrediction, tradeAdvice, loadSparseWeightsFromZip, isModelReady, adaptOnFailure} = engine;
+const {predictNext5 , tradeAdvice, loadSparseWeightsFromZip, isModelReady, adaptOnFailure} = engine;
 
 // ========== APP CONFIGURATION ==========
 const app = express();
@@ -104,7 +104,7 @@ const tradingCycle = async () => {
     }
 
     const prices = await getTicksForTraining(304); // Get full 300 ticks
-    const prediction = await runPrediction(prices);
+    const prediction = await predictNext5(prices);
 
     if (!prediction?.predicted || !prediction?.actuals) {
       console.warn('[TRADING] Incomplete prediction data');
