@@ -321,14 +321,18 @@ export async function uploadModelFromDisk(filepath = './model_dir/model.json') {
 
 export async function predictNext5(ticks) {
   if (!modelReady) throw new Error('Model not loaded');
-  if (ticks.length < 296) throw new Error('📉 Insufficient ticks (min 296)');
+  if (ticks.length < 300) throw new Error('📉 Insufficient ticks (min 300)');
 
   return tf.tidy(() => {
-    const basePrice = ticks[ticks.length - 1];
     const input = [];
 
-    // Fixed: Loop bounds to prevent out-of-range access
-    for (let i = ticks.length - 296; i < ticks.length - 1; i++) {
+    // 🔧 SMA log-return (first input)
+    const smaWindow = ticks.slice(-300, -295);
+    const sma = smaWindow.reduce((a, b) => a + b, 0) / 5;
+    input.push([Math.log(ticks[ticks.length - 295] / sma)]);
+
+    // 🔁 Remaining 294 log-returns
+    for (let i = ticks.length - 295; i < ticks.length - 1; i++) {
       const curr = ticks[i], next = ticks[i + 1];
       if (!curr || !next || curr <= 0 || next <= 0) {
         throw new Error('❌ Invalid tick in prediction input');
@@ -336,6 +340,7 @@ export async function predictNext5(ticks) {
       input.push([Math.log(next / curr)]);
     }
 
+    const basePrice = ticks[ticks.length - 1];
     const xs = tf.tensor3d([input], [1, 295, 1]);
     const predictedLogReturns = model.predict(xs).arraySync()[0];
     const predictedPrices = decodeLogReturns(basePrice, predictedLogReturns);
@@ -343,7 +348,6 @@ export async function predictNext5(ticks) {
     return predictedPrices;
   });
 }
-
 export async function adaptOnFailure(ticks, actualNext5) {
   if (!modelReady) throw new Error('Model not loaded');
   if (ticks.length < 296 || actualNext5.length !== 5) {
