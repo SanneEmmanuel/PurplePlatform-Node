@@ -27,6 +27,15 @@ let modelReady = false;
 function getOptimizer() {
   return tf.train.adam(0.001, 0.9, 0.999, 1e-8, { clipNorm: 5 });
 }
+//VERSION CONTROL CHECKS
+try{
+console.log('TFJS Versions:', {
+  core: tf.version.tfjs,
+  node: tf.version['tfjs-node'],
+  backend: tf.getBackend()
+});
+}catch(errx){ }
+
 
 function buildModel() {
   const m = tf.sequential();
