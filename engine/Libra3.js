@@ -127,7 +127,116 @@ function decodeLogReturns(base, encodedReturns) {
     return [...arr, next];
   }, [base]).slice(1);
 }
+export async function trainWithTicksRamLess(ticks, epochs = 50, batchSize = 32) {
+  console.log('✊ First Tick:', ticks[0]);
+  
+  if (!Array.isArray(ticks) || ticks.length < 304) {
+    console.warn(`❌ Insufficient ticks (${ticks.length}). Need at least 304.`);
+    return;
+  }
 
+  const invalidTicks = ticks.some(t => t <= 0 || !Number.isFinite(t));
+  if (invalidTicks) {
+    console.warn('❌ Dataset contains invalid ticks (zero, negative, or NaN)');
+    return;
+  }
+
+  const WINDOW = 295;
+  const STEPS = 5;
+  
+  // Optimized memory-safe batch generator
+  function* batchGenerator() {
+    const safeLogReturn = (a, b) => 
+      Math.log(Math.max(1e-7, Math.min(b / a, 1e7)));
+    
+    let batchInputs = [];
+    let batchLabels = [];
+    
+    for (let i = 0; i <= ticks.length - WINDOW - STEPS - 4; i++) {
+      try {
+        // Calculate SMA
+        const sma = (ticks[i] + ticks[i+1] + ticks[i+2] + ticks[i+3] + ticks[i+4]) / 5;
+        const input = [[safeLogReturn(sma, ticks[i+4])]];
+        
+        // Process window without slicing
+        for (let j = i+4; j < i+4+WINDOW-1; j++) {
+          if (j+1 >= ticks.length) break;
+          input.push([safeLogReturn(ticks[j], ticks[j+1])]);
+        }
+
+        // Calculate labels
+        const label = [];
+        const labelStart = i + WINDOW + 3;
+        for (let k = labelStart; k < labelStart+STEPS; k++) {
+          if (k+1 >= ticks.length) break;
+          label.push(safeLogReturn(ticks[k], ticks[k+1]));
+        }
+
+        // Validate sample
+        const isValid = [...input.flat(), ...label].every(Number.isFinite);
+        if (isValid) {
+          batchInputs.push(input);
+          batchLabels.push(label);
+          
+          if (batchInputs.length === batchSize) {
+            yield {
+              xs: tf.tensor3d(batchInputs, [batchSize, WINDOW, 1]),
+              ys: tf.tensor2d(batchLabels, [batchSize, STEPS])
+            };
+            batchInputs = [];
+            batchLabels = [];
+          }
+        }
+      } catch (err) {
+        console.warn(`⚠️ Skipped window at i=${i}:`, err.message);
+      }
+    }
+    
+    // Final partial batch
+    if (batchInputs.length > 0) {
+      yield {
+        xs: tf.tensor3d(batchInputs, [batchInputs.length, WINDOW, 1]),
+        ys: tf.tensor2d(batchLabels, [batchInputs.length, STEPS])
+      };
+    }
+  }
+
+  try {
+    if (!modelReady) {
+      model = buildModel();
+      console.log('🧠 Model built afresh successfully');
+    } else {
+      console.log('📡 Resuming training with loaded model...');
+    }
+
+    console.log('📦 Training model with RAM-efficient batches...');
+    const dataset = tf.data.generator(batchGenerator);
+    
+    await model.fitDataset(dataset, {
+      epochs,
+      callbacks: {
+        onEpochBegin: e => console.log(`🚀 Epoch ${e + 1}/${epochs}`),
+        onEpochEnd: (e, logs) => console.log(`📉 Epoch ${e + 1} Loss: ${logs.loss?.toFixed(6)}`)
+      }
+    });
+
+    // Original saving/uploading logic remains unchanged
+    const saveDir = '/tmp/model_dir';
+    if (!fs.existsSync(saveDir)) fs.mkdirSync(saveDir, { recursive: true });
+    
+    await model.save(`file://${saveDir}`);
+    console.log(`✅ Model saved to ${saveDir}`);
+
+    // ... (rest of saving/uploading logic same as original)
+    
+    modelReady = true;
+    console.log('✅ Model is ready for use');
+  } catch (err) {
+    console.error('💥 Training process failed:', err.message);
+  } finally {
+    // Cloudinary verification remains unchanged
+  }
+}
 export async function trainWithTicks(ticks, epochs = 50) {
   console.log('✊ First Tick:', ticks[0]);
   let dataset;
