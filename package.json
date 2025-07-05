@@ -10,8 +10,9 @@
   },
   
 "dependencies": {
-  "@tensorflow/tfjs-node": "^4.22.0",
-  "@tensorflow/tfjs-core": "^4.22.0",
+  "@tensorflow/tfjs-node": "4.22.0",
+  "@tensorflow/tfjs-core": "4.22.0",
+  "@tensorflow/tfjs-layers":"4.22.0",
   "archiver": "^7.0.1",
   "axios": "^1.10.0",
   "cloudinary": "^2.7.0",
