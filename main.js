@@ -186,7 +186,7 @@ import { spawn } from 'child_process';
 app.post('/train', async (_, res) => {
   console.log('🧠 Initiating manual training: node HistoryTrain.js 1000 100');
 
-  const train = spawn('node', ['HistoryTrain.js', '100', '100'], { cwd: __dirname });
+  const train = spawn('node', ['HistoryTrain.js', '3', '100'], { cwd: __dirname });
 
   train.stdout.on('data', (data) => {
     console.log(`[🧠 TRAIN STDOUT] ${data.toString().trim()}`);
