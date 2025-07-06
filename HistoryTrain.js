@@ -5,7 +5,7 @@ import archiver from 'archiver';
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { trainWithTicks, downloadCurrentModel } from './engine/Libra3.js';
+import { trainWithTicks, downloadCurrentModel,trainWithTicksRamLess } from './engine/Libra3.js';
 import { getTicksForTraining, pingServer} from './deriv.js';
 
 const ZIP_PATH = './downloads/LibraModel.zip';
@@ -31,7 +31,8 @@ async function train(batchCount = 1, epochs = 100) {
 
   // Train the Libra model using ticks
   console.log('Training with ticks');
-  await trainWithTicks(ticks, epochs);
+  try{ await trainWithTicks(ticks, epochs); }
+  catch(err){ await trainWithTicksRamLess(ticks,epochs);}
 
   // Ensure the local download directory exists
   fs.mkdirSync('./downloads', { recursive: true });
