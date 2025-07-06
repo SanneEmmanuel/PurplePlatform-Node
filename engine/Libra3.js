@@ -127,6 +127,8 @@ function decodeLogReturns(base, encodedReturns) {
     return [...arr, next];
   }, [base]).slice(1);
 }
+
+
 export async function trainWithTicksRamLess(ticks, epochs = 50, batchSize = 32) {
   console.log('✊ First Tick:', ticks[0]);
   
@@ -227,8 +229,43 @@ export async function trainWithTicksRamLess(ticks, epochs = 50, batchSize = 32) 
     await model.save(`file://${saveDir}`);
     console.log(`✅ Model saved to ${saveDir}`);
 
-    // ... (rest of saving/uploading logic same as original)
-    
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    const output = fs.createWriteStream(zipPath);
+    const zipComplete = new Promise((res, rej) => {
+      output.on('close', res);
+      archive.on('error', rej);
+    });
+    archive.pipe(output);
+    archive.directory(saveDir, false);
+    archive.finalize();
+    await zipComplete;
+    console.log(`📦 Zipped model to ${zipPath}`);
+
+    async function retryUpload(filePath, retries = 3, delay = 2000) {
+      for (let i = 0; i < retries; i++) {
+        try {
+          return await cloudinary.uploader.upload(filePath, {
+            resource_type: 'raw',
+            public_id: publicId,
+            type: 'upload',
+            overwrite: true // Fixed: Add overwrite option
+          });
+        } catch (err) {
+          console.warn(`⏳ Upload failed (${i + 1}/${retries})`);
+          if (i === retries - 1) throw err;
+          await new Promise(res => setTimeout(res, delay));
+        }
+      }
+    }
+
+    try {
+      console.log('☁️ Uploading model ZIP to Cloudinary...');
+      const uploaded = await retryUpload(zipPath);
+      console.log('☁️ ZIP uploaded:', uploaded.secure_url);
+    } catch (uploadErr) {
+      console.warn('❌ Failed to upload ZIP:', uploadErr);
+    }
+
     modelReady = true;
     console.log('✅ Model is ready for use');
   } catch (err) {
