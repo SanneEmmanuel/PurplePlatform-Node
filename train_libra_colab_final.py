@@ -23,8 +23,8 @@ cloudinary.config(
 public_id = 'libra_v4.zip'
 
 # === Deriv API Constants ===
-DERIV_TOKEN = 'your_token_here'  # 🔐 Set your real token here
-SYMBOL = 'R_100'
+DERIV_TOKEN = 'JklMzewtX7Da9mT'  # 🔐 Set your real token here
+SYMBOL = 'stpRNG'
 DERIV_WS = 'wss://ws.derivws.com/websockets/v3?app_id=1089'
 
 # === Optimizer ===
