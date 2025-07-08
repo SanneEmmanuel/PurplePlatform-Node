@@ -1,7 +1,17 @@
 // libra3.js - Advanced AI: 5-Tick Prediction, Adaptive Learning, Cloud Save
 // Author: Dr. Sanne Karibo - PurpleBot AI Core
 
-import * as tf from '@tensorflow/tfjs-node';
+// tensorflow loader with GPU fallback
+let tf;
+try {
+  tf = await import('@tensorflow/tfjs-node-gpu');
+  console.log('🚀 Loaded TensorFlow with GPU support');
+} catch (err) {
+  console.warn('⚠️ GPU version not available, falling back to CPU...');
+  tf = await import('@tensorflow/tfjs-node');
+  console.log('✅ Loaded TensorFlow with CPU support');
+}
+
 import fs from 'fs';
 import path from 'path';
 import fetch from 'node-fetch';
@@ -15,6 +25,7 @@ cloudinary.config({
   api_key: '354656419316393', 
   api_secret: 'M-Trl9ltKDHyo1dIP2AaLOG-WPM' 
 });
+
 const publicId = 'libra_v4.zip'; 
 if (!cloudinary.config().cloud_name || !cloudinary.config().api_key) {
   console.warn('❌ Cloudinary config invalid — Uploads may fail');
@@ -27,7 +38,8 @@ let modelReady = false;
 function getOptimizer() {
   return tf.train.adam(0.001, 0.9, 0.999, 1e-8, { clipNorm: 5 });
 }
-//VERSION CONTROL CHECKS
+
+// VERSION CONTROL CHECKS...
 try{
 console.log('TFJS Versions:', {
   core: tf.version.tfjs,
