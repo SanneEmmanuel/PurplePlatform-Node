@@ -32,21 +32,12 @@ logging.basicConfig(
 )
 
 # --- Load Credentials ---
-try:
-    from google.colab import userdata
-    CLOUDINARY_CLOUD_NAME = userdata.get('CLOUDINARY_CLOUD_NAME')
-    CLOUDINARY_API_KEY = userdata.get('CLOUDINARY_API_KEY')
-    CLOUDINARY_API_SECRET = userdata.get('CLOUDINARY_API_SECRET')
-    DERIV_API_TOKEN = userdata.get('DERIV_API_TOKEN') or "JklMzewtX7Da9mT"
-    SYMBOL = userdata.get('SYMBOL') or "stpRNG"
-    logging.info("✅ Loaded credentials from Colab Secrets.")
-except Exception:
-    logging.warning("⚠️ Colab Secrets not found. Using fallbacks.")
-    CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', 'dj4bwntzb')
-    CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY', '354656419316393')
-    CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET', 'M-Trl9ltKDHyo1dIP2AaLOG-WPM')
-    DERIV_API_TOKEN = os.environ.get('DERIV_API_TOKEN', "JklMzewtX7Da9mT")
-    SYMBOL = os.environ.get('SYMBOL', "stpRNG")
+# Securely loads credentials from environment variables, with fallbacks to your provided values.
+CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', 'dj4bwntzb')
+CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY', '354656419316393')
+CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET', 'M-Trl9ltKDHyo1dIP2AaLOG-WPM')
+DERIV_API_TOKEN = os.environ.get('DERIV_API_TOKEN', "JklMzewtX7Da9mT")
+SYMBOL = os.environ.get('SYMBOL', "stpRNG")
 
 cloudinary.config(
     cloud_name=CLOUDINARY_CLOUD_NAME,
@@ -55,7 +46,7 @@ cloudinary.config(
     secure=True
 )
 
-PUBLIC_ID = 'libra_v4_python.zip'
+PUBLIC_ID = 'libra_v4.zip'
 DERIV_WS_URL = 'wss://ws.derivws.com/websockets/v3?app_id=1089'
 WINDOW_SIZE = 295
 PREDICTION_STEPS = 5
@@ -206,8 +197,9 @@ async def main():
     if ok:
         await asyncio.to_thread(save_model_to_cloudinary, model)
 
-if __name__ == "__main__" and 'google.colab' in str(get_ipython()):
+if __name__ == "__main__":
+    # Check if all required environment variables are set
     if not all([CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET, DERIV_API_TOKEN]):
-        logging.error("🚨 Missing credentials.")
+        logging.error("🚨 CRITICAL: Credentials not set. Ensure environment variables are configured.")
     else:
-        asyncio.run(main())
+        await main()
