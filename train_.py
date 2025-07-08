@@ -264,4 +264,4 @@ if __name__ == "__main__":
     if not all([CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET, DERIV_API_TOKEN]):
         logging.error("🚨 CRITICAL: Credentials not set. Ensure environment variables are configured.")
     else:
-        asyncio.run(main())
+        await main()
