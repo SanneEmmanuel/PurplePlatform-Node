@@ -34,30 +34,12 @@ logging.basicConfig(
 )
 
 # --- Load Credentials & Environment Variables ---
-# Securely loads credentials from Colab Secrets, with fallbacks to your provided values.
-# --- Load Credentials & Environment Variables ---
-# Tries to load from Colab Secrets first, then falls back to environment variables or defaults.
-
-try:
-    from google.colab import userdata
-    try:
-        CLOUDINARY_CLOUD_NAME = userdata.get('CLOUDINARY_CLOUD_NAME')
-        CLOUDINARY_API_KEY = userdata.get('CLOUDINARY_API_KEY')
-        CLOUDINARY_API_SECRET = userdata.get('CLOUDINARY_API_SECRET')
-        DERIV_API_TOKEN = userdata.get('DERIV_API_TOKEN') or "JklMzewtX7Da9mT"
-        SYMBOL = userdata.get('SYMBOL') or "stpRNG"
-        logging.info("✅ Loaded credentials from Colab Secrets.")
-    except Exception as e:
-        raise RuntimeError("⚠️ Some Colab secrets are missing.") from e
-
-except Exception:
-    logging.warning("⚠️ Colab Secrets not found or incomplete. Using fallback environment variables or hardcoded defaults.")
-    CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', 'dj4bwntzb')
-    CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY', '354656419316393')
-    CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET', 'M-Trl9ltKDHyo1dIP2AaLOG-WPM')
-    DERIV_API_TOKEN = os.environ.get('DERIV_API_TOKEN', "JklMzewtX7Da9mT")
-    SYMBOL = os.environ.get('SYMBOL', "stpRNG")
-
+# Securely loads credentials from environment variables, with fallbacks to your provided values.
+CLOUDINARY_CLOUD_NAME = os.environ.get('CLOUDINARY_CLOUD_NAME', 'dj4bwntzb')
+CLOUDINARY_API_KEY = os.environ.get('CLOUDINARY_API_KEY', '354656419316393')
+CLOUDINARY_API_SECRET = os.environ.get('CLOUDINARY_API_SECRET', 'M-Trl9ltKDHyo1dIP2AaLOG-WPM')
+DERIV_API_TOKEN = os.environ.get('DERIV_API_TOKEN', "JklMzewtX7Da9mT")
+SYMBOL = os.environ.get('SYMBOL', "stpRNG")
 
 # Configure Cloudinary SDK
 cloudinary.config(
@@ -278,8 +260,8 @@ async def main():
         logging.error("Model training failed. Skipping save to cloud.")
 
 # --- RUN THE SCRIPT ---
-if __name__ == "__main__" and 'google.colab' in str(get_ipython()):
+if __name__ == "__main__":
     if not all([CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET, DERIV_API_TOKEN]):
-        logging.error("🚨 CRITICAL: Credentials not set. Go to 'Secrets' (key icon) and add them.")
+        logging.error("🚨 CRITICAL: Credentials not set. Ensure environment variables are configured.")
     else:
         asyncio.run(main())
